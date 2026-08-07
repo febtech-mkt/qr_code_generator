@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!-- Completely disable pinch and double-tap zooming on mobile -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FEBTECH QR Code Generator</title>
+    
+    <!-- External Database Files -->
+    <!-- Make sure these files are in the same folder as this HTML file -->
+    <script src="database_index.js"></script>
+    <script src="qr_database.js"></script>
+
+    <!-- QR Code Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background: #f2f2f7;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        /* Top Left Recent QR Button */
+        #recentBtn {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: #5856d6;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            z-index: 100;
+            transition: 0.2s;
+        }
+        #recentBtn:hover { background: #4745b8; }
+        #recentBtn:active { transform: scale(0.95); }
+
+        /* Top Right Tokens Button */
+        #tokensBtn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #ff9500; 
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            z-index: 100;
+            transition: 0.2s;
+        }
+        #tokensBtn:hover { background: #e08300; }
+        #tokensBtn:active { transform: scale(0.95); }
+
+        .container {
+            width: 100%;
+            max-width: 420px;
+            background: #ffffff;
+            border-radius: 18px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,.12);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 25px;
+            font-size: 28px;
+            color: #111;
+        }
+
+        label {
+            display: block;
+            margin-top: 18px;
+            margin-bottom: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        input {
+            width: 100%;
+            height: 50px;
+            border: 1px solid #d1d1d6;
+            border-radius: 12px;
+            padding: 0 15px;
+            font-size: 16px;
+            outline: none;
+            background: white;
+            transition: .2s;
+        }
+
+        input:focus {
+            border-color: #007AFF;
+            box-shadow: 0 0 0 4px rgba(0,122,255,.15);
+        }
+
+        input[list] {
+            cursor: text;
+        }
+
+        .model-box {
+            display: flex;
+            align-items: center;
+            border: 1px solid #d1d1d6;
+            border-radius: 12px;
+            overflow: hidden;
+            background: white;
+        }
+
+        .prefix {
+            background: #f5f5f7;
+            color: #555;
+            padding: 0 15px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            font-weight: bold;
+            border-right: 1px solid #d1d1d6;
+            white-space: nowrap;
+        }
+
+        .model-box input {
+            border: none;
+            border-radius: 0;
+            flex: 1;
+            height: 50px;
+            padding-left: 15px;
+            box-shadow: none;
+        }
+
+        button.generate-btn {
+            width: 100%;
+            height: 52px;
+            margin-top: 28px;
+            border: none;
+            border-radius: 12px;
+            background: #007AFF;
+            color: white;
+            font-size: 17px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: .2s;
+        }
+
+        button.generate-btn:hover { background: #0063d1; }
+        button.generate-btn:active { transform: scale(.98); }
+
+        /* Full Screen Modal Styling */
+        .modal {
+            display: none; 
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.92);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            padding: 15px;
+        }
+
+        .close-btn {
+            position: absolute;
+            top: 20px;
+            right: 25px;
+            color: white;
+            font-size: 45px;
+            font-weight: 300;
+            cursor: pointer;
+            line-height: 1;
+            z-index: 1010;
+        }
+
+        /* QR Code Modal Specifics */
+        #qrcode img, #qrcode canvas {
+            border: 15px solid white;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            max-width: 90vw;
+            max-height: 90vw;
+        }
+        
+        .qr-hint {
+            color: white;
+            margin-top: 20px;
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-align: center;
+        }
+
+        .qr-details {
+            color: rgba(255, 255, 255, 0.85);
+            margin-top: 15px;
+            font-size: 13px;
+            line-height: 1.5;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px 20px;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 350px;
+        }
+
+        .qr-details strong {
+            color: white;
+            font-weight: 600;
+        }
+
+        /* Recent QR Modal Specifics */
+        .recent-modal-header {
+            color: white;
+            font-size: 22px;
+            font-weight: bold;
+            margin-bottom: 4px;
+            text-align: center;
+        }
+        .recent-modal-subtitle {
+            color: #ccc;
+            font-size: 13px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .sync-toolbar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            width: 100%;
+            max-width: 450px;
+            justify-content: center;
+        }
+        .sync-btn {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 10px;
+            padding: 8px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .sync-btn:hover { background: rgba(255, 255, 255, 0.3); }
+        .recent-list {
+            width: 100%;
+            max-width: 450px;
+            max-height: 60vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding-right: 5px;
+        }
+        .recent-card {
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 14px;
+            padding: 14px 18px;
+            cursor: pointer;
+            transition: 0.2s;
+            color: white;
+        }
+        .recent-card:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+        .recent-card:active {
+            transform: scale(0.98);
+        }
+        .recent-card-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #fff;
+        }
+        .recent-card-info {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.8);
+            line-height: 1.4;
+        }
+        .recent-card-time {
+            font-size: 11px;
+            color: #ffa500;
+            margin-top: 6px;
+            font-weight: 500;
+        }
+        .recent-empty {
+            color: #ccc;
+            font-size: 15px;
+            text-align: center;
+            margin-top: 40px;
+        }
+
+        /* Tokens Slider Specifics */
+        .slider-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            max-height: 75vh;
+        }
+
+        #tokenImg {
+            width: 100vw;
+            max-height: 75vh; 
+            border-radius: 12px;
+            object-fit: contain; 
+            transition: opacity 0.3s ease;
+            touch-action: none;
+        }
+
+        .token-title {
+            color: white;
+            margin-bottom: 20px;
+            font-size: 18px;
+            font-weight: 600;
+            text-align: center;
+            background: rgba(255,255,255,0.15);
+            padding: 8px 16px;
+            border-radius: 20px;
+        }
+
+        .token-footer {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+            width: 100%;
+        }
+
+        .nav-btn {
+            background: rgba(255,255,255,0.25);
+            border: none;
+            color: white;
+            font-size: 20px;
+            width: 50px;
+            height: 50px;
+            border-radius: 25px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .nav-btn:active { background: rgba(255,255,255,0.5); }
+        
+        .token-counter {
+            color: #ffffff;
+            font-size: 18px;
+            font-weight: bold;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        @media(max-width: 500px) {
+            .container { padding: 20px; border-radius: 16px; }
+            h1 { font-size: 24px; }
+            .close-btn { top: 20px; right: 20px; font-size: 40px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Recent QR Button (Top Left) -->
+    <button id="recentBtn" onclick="openRecentModal()">Recent QR</button>
+
+    <!-- Tokens Button (Top Right) -->
+    <button id="tokensBtn" onclick="openTokensModal()">Tokens</button>
+
+    <!-- Main Generator Container -->
+    <div class="container">
+        <h1>FEBTECH QR Code Generator</h1>
+
+        <!-- Machine -->
+        <label>Machine Name</label>
+        <input list="machines" id="machine" placeholder="Start typing machine name..." autocomplete="off">
+        <datalist id="machines"></datalist>
+
+        <!-- Model -->
+        <label>Model Number</label>
+        <div class="model-box">
+            <span class="prefix">FEBTECH-</span>
+            <input list="models" type="text" id="model" placeholder="0480A CL" autocomplete="off">
+            <datalist id="models"></datalist>
+        </div>
+
+        <!-- Serial -->
+        <label>Serial Number</label>
+        <input list="serials" type="text" id="serial" placeholder="Enter Serial Number" autocomplete="off">
+        <datalist id="serials"></datalist>
+
+        <!-- Date -->
+        <label>Date (MM/YYYY)</label>
+        <input type="text" id="date" placeholder="MM/YYYY" maxlength="7" autocomplete="off">
+
+        <!-- Responsible Person -->
+        <label>Responsible Person</label>
+        <input list="persons" id="person" placeholder="Select or type a name..." autocomplete="off">
+        <datalist id="persons">
+            <option value="Mr. Amrut Deshmukh">
+            <option value="Mr. Rajaram Mithe">
+            <option value="Mr. Umesh Kale">
+        </datalist>
+
+        <!-- Button -->
+        <button class="generate-btn" onclick="generateQR()">Generate QR Code</button>
+    </div>
+
+    <!-- QR Code Modal (Full Screen) -->
+    <div id="qrModal" class="modal">
+        <span class="close-btn" onclick="closeQRModal()">&times;</span>
+        <div id="qrcode"></div>
+        <div class="qr-hint">Scan from screen</div>
+        <div id="qrDetails" class="qr-details"></div>
+    </div>
+
+    <!-- Recent QRs Modal (Full Screen) -->
+    <div id="recentModal" class="modal">
+        <span class="close-btn" onclick="closeRecentModal()">&times;</span>
+        <div class="recent-modal-header">Recent QR Codes</div>
+        <div class="recent-modal-subtitle">Auto-deletes after 48 hours • Click to view</div>
+        
+        <!-- Sync Toolbar to share data between iPhone & PC -->
+        <div class="sync-toolbar">
+            <button class="sync-btn" onclick="exportSyncData()">Export Sync Code</button>
+            <button class="sync-btn" onclick="importSyncData()">Import Sync Code</button>
+        </div>
+
+        <div id="recentList" class="recent-list"></div>
+    </div>
+
+    <!-- Tokens Gallery Modal (Full Screen) -->
+    <div id="tokensModal" class="modal">
+        <span class="close-btn" onclick="closeTokensModal()">&times;</span>
+        
+        <div class="token-title" id="tokenTitle">Main Title</div>
+        
+        <div class="slider-container">
+            <img id="tokenImg" src="" alt="Token Image">
+        </div>
+        
+        <div class="token-footer">
+            <button class="nav-btn left" onclick="prevToken()">&#10094;</button>
+            <div class="token-counter" id="tokenCounter">1 / 6</div>
+            <button class="nav-btn right" onclick="nextToken()">&#10095;</button>
+        </div>
+    </div>
+
+    <script>
+        // =========================
+        // Default Machine List
+        // =========================
+        const DEFAULT_MACHINES = [
+            "Febtech's DCM-180", "Febtech's DCM-300", "Automatic Ladling Machine",
+            "Servo Sprayer Two Axis", "Linear Servo Sprayer Two Axis", "Auto Spray",
+            "Servo Sprayer With Extractor Four Axis", "Centralized Die-cote Mixing Unit",
+            "Vertical Auto Sprayer", "Die Coat Container with Mixing Unit",
+            "Mould Channel Descaling Unit", "Portable Die Coat Mixing Unit",
+            "Quenching Tank", "Automatic Extractor", "Jet Cooling Unit (Open Loop)",
+            "Cooling Conveyor", "Auto Die Clamping Unit", "Jet Cooling Unit (Closed Loop)",
+            "Mould Temperature Controller", "Mould Vacuum Unit", "N2 Degassing Machine",
+            "Hoistable Degassing Unit", "Vacuum Testing Unit", "Density Index Analyzer",
+            "Dispenser Unit", "Plunger Lubrication Unit", "Ejector Pin Cutting Machine",
+            "Metal Transfer Ladle", "Universal Precision Grinder"
+        ];
+
+        // =========================
+        // 48-Hour Expiry & Recent QR Logic (With qr_database.js Integration)
+        // =========================
+        const EXPIRY_HOURS_MS = 48 * 60 * 60 * 1000; // 48 Hours in Milliseconds
+
+        function getCleanRecentQRs() {
+            let recentQRs = JSON.parse(localStorage.getItem("recent_qr_codes") || "[]");
+            
+            // Merge in external QR_DATABASE if the file qr_database.js exists
+            if (typeof QR_DATABASE !== "undefined" && Array.isArray(QR_DATABASE)) {
+                QR_DATABASE.forEach(dbItem => {
+                    // Only add if it doesn't already exist in recentQRs by serial
+                    if (!recentQRs.some(item => item.serial === dbItem.serial)) {
+                        recentQRs.push(dbItem);
+                    }
+                });
+            }
+
+            const now = Date.now();
+            // Keep only QR codes created within the last 48 hours
+            recentQRs = recentQRs.filter(item => (now - item.timestamp) < EXPIRY_HOURS_MS);
+            
+            // Sort by newest first
+            recentQRs.sort((a, b) => b.timestamp - a.timestamp);
+
+            localStorage.setItem("recent_qr_codes", JSON.stringify(recentQRs));
+            return recentQRs;
+        }
+
+        function saveRecentQR(machine, model, serial, date, person, qrText) {
+            let recentQRs = getCleanRecentQRs();
+            // Remove older duplicate if serial already exists
+            recentQRs = recentQRs.filter(item => item.serial !== serial);
+
+            recentQRs.unshift({
+                id: Date.now(),
+                timestamp: Date.now(),
+                machine,
+                model,
+                serial,
+                date,
+                person,
+                qrText
+            });
+
+            localStorage.setItem("recent_qr_codes", JSON.stringify(recentQRs));
+        }
+
+        function openRecentModal() {
+            const recentQRs = getCleanRecentQRs();
+            const recentList = document.getElementById("recentList");
+            recentList.innerHTML = "";
+
+            if (recentQRs.length === 0) {
+                recentList.innerHTML = `<div class="recent-empty">No recent QR codes found.<br>Any QR older than 48 hours is automatically deleted.</div>`;
+            } else {
+                recentQRs.forEach(item => {
+                    const hoursAgo = Math.floor((Date.now() - item.timestamp) / (1000 * 60 * 60));
+                    const minsAgo = Math.floor(((Date.now() - item.timestamp) % (1000 * 60 * 60)) / (1000 * 60));
+                    const timeText = hoursAgo > 0 ? `${hoursAgo}h ${minsAgo}m ago` : `${minsAgo}m ago`;
+                    const hoursRemaining = Math.max(0, 48 - hoursAgo);
+
+                    const card = document.createElement("div");
+                    card.className = "recent-card";
+                    card.innerHTML = `
+                        <div class="recent-card-title">${item.machine}</div>
+                        <div class="recent-card-info">
+                            <strong>Model:</strong> ${item.model} | <strong>Serial:</strong> ${item.serial}<br>
+                            <strong>Date:</strong> ${item.date} | <strong>By:</strong> ${item.person}
+                        </div>
+                        <div class="recent-card-time">Generated ${timeText} • Expires in ${hoursRemaining}h</div>
+                    `;
+                    card.onclick = () => previewRecentQR(item);
+                    recentList.appendChild(card);
+                });
+            }
+
+            document.getElementById("recentModal").style.display = "flex";
+        }
+
+        function closeRecentModal() {
+            document.getElementById("recentModal").style.display = "none";
+        }
+
+        function previewRecentQR(item) {
+            closeRecentModal();
+            renderQRModal(item.machine, item.model, item.serial, item.date, item.person, item.qrText);
+        }
+
+        // =========================
+        // Sync / Backup Data Across Devices (PC <-> iPhone)
+        // =========================
+        function exportSyncData() {
+            const exportData = {
+                custom_machine_data: JSON.parse(localStorage.getItem("custom_machine_data") || "[]"),
+                recent_qr_codes: getCleanRecentQRs(),
+                persons: JSON.parse(localStorage.getItem("persons") || "[]")
+            };
+            const syncString = btoa(encodeURIComponent(JSON.stringify(exportData)));
+            
+            navigator.clipboard.writeText(syncString).then(() => {
+                alert("Sync Code COPIED to clipboard!\n\nEmail or send this text to your PC/iPhone and click 'Import Sync Code' to sync all your recent QRs and newly added machines!");
+            }).catch(() => {
+                prompt("Copy this Sync Code manually:", syncString);
+            });
+        }
+
+        function importSyncData() {
+            const input = prompt("Paste your Sync Code here to import your Recent QRs and Custom Machines:");
+            if (!input) return;
+
+            try {
+                const importData = JSON.parse(decodeURIComponent(atob(input.trim())));
+                
+                // Merge custom machine data
+                const existingMachines = JSON.parse(localStorage.getItem("custom_machine_data") || "[]");
+                const mergedMachines = [...existingMachines, ...(importData.custom_machine_data || [])];
+                const uniqueMachines = Array.from(new Set(mergedMachines.map(a => a.path)))
+                    .map(path => mergedMachines.find(a => a.path === path));
+                localStorage.setItem("custom_machine_data", JSON.stringify(uniqueMachines));
+
+                // Merge recent QRs
+                const existingQRs = getCleanRecentQRs();
+                const mergedQRs = [...existingQRs, ...(importData.recent_qr_codes || [])];
+                const uniqueQRs = Array.from(new Set(mergedQRs.map(a => a.serial)))
+                    .map(serial => mergedQRs.find(a => a.serial === serial));
+                localStorage.setItem("recent_qr_codes", JSON.stringify(uniqueQRs));
+
+                // Merge persons
+                const existingPersons = JSON.parse(localStorage.getItem("persons") || "[]");
+                const mergedPersons = Array.from(new Set([...existingPersons, ...(importData.persons || [])]));
+                localStorage.setItem("persons", JSON.stringify(mergedPersons));
+
+                alert("Success! Your Recent QR codes and custom machines have been imported and synced!");
+                updateSuggestions();
+                openRecentModal();
+            } catch (e) {
+                alert("Invalid Sync Code. Please make sure you copied the entire text correctly.");
+            }
+        }
+
+        // =========================
+        // Handle Auto Suggestions (NOW INCLUDES NEW MACHINES)
+        // =========================
+        function updateSuggestions() {
+            const machineInput = document.getElementById("machine").value.trim();
+            const modelInput = document.getElementById("model").value.trim();
+            const currentFullModel = modelInput ? "FEBTECH-" + modelInput : "";
+
+            let availableMachines = new Set(DEFAULT_MACHINES);
+            let availableModels = new Set();
+            let availableSerials = new Set();
+
+            let allData = [];
+            if (typeof MACHINE_DATA !== 'undefined') {
+                allData = allData.concat(MACHINE_DATA);
+            }
+            const savedCustomData = JSON.parse(localStorage.getItem("custom_machine_data") || "[]");
+            allData = allData.concat(savedCustomData);
+
+            allData.forEach(item => {
+                const parts = item.path.split('/');
+                if (parts.length >= 5) {
+                    const dbMachine = parts[2];
+                    const dbModel = parts[3];
+                    const dbSerial = parts[4];
+
+                    availableMachines.add(dbMachine);
+
+                    if (dbMachine === machineInput) {
+                        let cleanModel = dbModel.startsWith("FEBTECH-") ? dbModel.replace("FEBTECH-", "") : dbModel;
+                        availableModels.add(cleanModel);
+
+                        if (currentFullModel === "" || dbModel === currentFullModel) {
+                            availableSerials.add(dbSerial);
+                        }
+                    }
+                }
+            });
+
+            const machinesDatalist = document.getElementById("machines");
+            machinesDatalist.innerHTML = "";
+            availableMachines.forEach(m => {
+                let opt = document.createElement("option");
+                opt.value = m;
+                machinesDatalist.appendChild(opt);
+            });
+
+            const modelsDatalist = document.getElementById("models");
+            modelsDatalist.innerHTML = "";
+            availableModels.forEach(m => {
+                let opt = document.createElement("option");
+                opt.value = m;
+                modelsDatalist.appendChild(opt);
+            });
+
+            const serialsDatalist = document.getElementById("serials");
+            serialsDatalist.innerHTML = "";
+            availableSerials.forEach(s => {
+                let opt = document.createElement("option");
+                opt.value = s;
+                serialsDatalist.appendChild(opt);
+            });
+        }
+
+        document.getElementById("machine").addEventListener("input", updateSuggestions);
+        document.getElementById("machine").addEventListener("change", updateSuggestions);
+        document.getElementById("model").addEventListener("input", updateSuggestions);
+
+        // =========================
+        // Load Saved Persons
+        // =========================
+        const personList = document.getElementById("persons");
+        let savedPersons = JSON.parse(localStorage.getItem("persons")) || [];
+
+        savedPersons.forEach(name => {
+            const option = document.createElement("option");
+            option.value = name;
+            personList.appendChild(option);
+        });
+
+        // =========================
+        // Auto Date Format MM/YYYY
+        // =========================
+        const dateInput = document.getElementById("date");
+        dateInput.addEventListener("input", function () {
+            let value = this.value.replace(/\D/g, "");
+            if (value.length > 6) value = value.substring(0, 6);
+            if (value.length >= 3) {
+                value = value.substring(0, 2) + "/" + value.substring(2);
+            }
+            this.value = value;
+        });
+
+        // =========================
+        // Generate & Render QR Code
+        // =========================
+        function renderQRModal(machine, model, serial, date, person, qrText) {
+            const qr = document.getElementById("qrcode");
+            qr.innerHTML = "";
+            new QRCode(qr, {
+                text: qrText,
+                width: 280, 
+                height: 280,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.H
+            });
+
+            const qrDetails = document.getElementById("qrDetails");
+            qrDetails.innerHTML = `
+                <div><strong>Machine:</strong> ${machine}</div>
+                <div><strong>Model:</strong> ${model}</div>
+                <div><strong>Serial Number:</strong> ${serial}</div>
+                <div><strong>Date:</strong> ${date}</div>
+                <div><strong>Responsible:</strong> ${person}</div>
+            `;
+
+            openQRModal();
+        }
+
+        function generateQR() {
+            const machine = document.getElementById("machine").value.trim();
+            const modelInput = document.getElementById("model").value.trim();
+            const serial = document.getElementById("serial").value.trim();
+            const date = document.getElementById("date").value.trim();
+            const person = document.getElementById("person").value.trim();
+
+            if (machine == "") return alert("Select Machine Name");
+            if (modelInput == "") return alert("Enter Model Number");
+            if (serial == "") return alert("Enter Serial Number");
+            if (!/^\d{2}\/\d{4}$/.test(date)) return alert("Date must be MM/YYYY");
+            if (person == "") return alert("Enter Responsible Person");
+
+            // 1. Save New Person
+            if (!savedPersons.includes(person) &&
+                person != "Mr. Amrut Deshmukh" &&
+                person != "Mr. Rajaram Mithe" &&
+                person != "Mr. Umesh Kale") {
+                
+                savedPersons.push(person);
+                localStorage.setItem("persons", JSON.stringify(savedPersons));
+                const option = document.createElement("option");
+                option.value = person;
+                personList.appendChild(option);
+            }
+
+            const model = "FEBTECH-" + modelInput;
+            
+            // 2. Save Custom Machine Name/Model/Serial to localStorage
+            const newPath = `./data/${machine}/${model}/${serial}/custom_entry/img.jpg`;
+            const savedCustomData = JSON.parse(localStorage.getItem("custom_machine_data") || "[]");
+            if (!savedCustomData.some(item => item.path === newPath)) {
+                savedCustomData.push({ path: newPath, date: new Date().toISOString() });
+                localStorage.setItem("custom_machine_data", JSON.stringify(savedCustomData));
+            }
+
+            // Refresh suggestions so the new machine name immediately shows up in dropdowns
+            updateSuggestions();
+
+            // 3. Setup QR text format
+            const qrText = `##########-THIS_NEW_START-##########\n${machine}\n${model}\n${serial}\n${date}\n${person}`;
+
+            // 4. Save to Recent QR History (valid for 48 hours)
+            saveRecentQR(machine, model, serial, date, person, qrText);
+
+            // 5. Render Modal
+            renderQRModal(machine, model, serial, date, person, qrText);
+        }
+
+        // =========================
+        // Modal Controls (QR)
+        // =========================
+        function openQRModal() {
+            document.getElementById('qrModal').style.display = 'flex';
+        }
+        function closeQRModal() {
+            document.getElementById('qrModal').style.display = 'none';
+        }
+
+        // =========================
+        // Tokens Slider Logic
+        // =========================
+        const tokens = [
+            { src: "tokens_qr_codes_MACHINE ID RECORD.webp", title: "MACHINE ID RECORD" },
+            { src: "tokens_qr_codes_ADDITIONAL VIEW.webp", title: "ADDITIONAL VIEW" },
+            { src: "tokens_qr_codes_ELECTRICAL PANEL.webp", title: "ELECTRICAL PANEL" },
+            { src: "tokens_qr_codes_MAIN VISUAL RECORD.webp", title: "MAIN VISUAL RECORD" },
+            { src: "tokens_qr_codes_MACHINE SPARES.webp", title: "SPARE" },
+            { src: "tokens_qr_codes_DAMAGE & ISSUE.webp", title: "DAMAGE & ISSUE" }
+        ];
+        
+        let currentTokenIndex = 0;
+        const tokenImgElement = document.getElementById("tokenImg");
+        const tokenTitleElement = document.getElementById("tokenTitle");
+        const tokenCounterElement = document.getElementById("tokenCounter");
+
+        function openTokensModal() {
+            document.getElementById('tokensModal').style.display = 'flex';
+            updateTokenView();
+        }
+
+        function closeTokensModal() {
+            document.getElementById('tokensModal').style.display = 'none';
+        }
+
+        function updateTokenView() {
+            tokenImgElement.style.opacity = 0;
+            setTimeout(() => {
+                tokenImgElement.src = tokens[currentTokenIndex].src;
+                tokenTitleElement.innerText = tokens[currentTokenIndex].title;
+                tokenCounterElement.innerText = `${currentTokenIndex + 1} / ${tokens.length}`;
+                tokenImgElement.style.opacity = 1;
+            }, 150);
+        }
+
+        function nextToken() {
+            currentTokenIndex = (currentTokenIndex + 1) % tokens.length;
+            updateTokenView();
+        }
+
+        function prevToken() {
+            currentTokenIndex = (currentTokenIndex - 1 + tokens.length) % tokens.length;
+            updateTokenView();
+        }
+
+        // Touch Swipe functionality for iPhone/Mobile
+        let touchStartX = 0;
+        let touchEndX = 0;
+        
+        tokenImgElement.addEventListener('touchstart', e => {
+            touchStartX = e.changedTouches[0].screenX;
+        });
+
+        tokenImgElement.addEventListener('touchend', e => {
+            touchEndX = e.changedTouches[0].screenX;
+            handleSwipe();
+        });
+
+        function handleSwipe() {
+            if (touchEndX < touchStartX - 40) nextToken();
+            if (touchEndX > touchStartX + 40) prevToken();
+        }
+
+        // =========================
+        // ENTER & ESCAPE KEYS
+        // =========================
+        document.addEventListener("keydown", function(e) {
+            if (e.key === "Enter") {
+                if (document.getElementById('qrModal').style.display !== 'flex' && 
+                    document.getElementById('tokensModal').style.display !== 'flex' &&
+                    document.getElementById('recentModal').style.display !== 'flex') {
+                    generateQR();
+                }
+            }
+            if (e.key === "Escape") {
+                closeQRModal();
+                closeTokensModal();
+                closeRecentModal();
+            }
+        });
+        
+        // Initialize suggestions & clean expired 48-hr QRs on load
+        window.onload = function() {
+            updateSuggestions();
+            getCleanRecentQRs();
+        };
+    </script>
+</body>
+</html>
