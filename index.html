@@ -7,8 +7,6 @@
     <title>FEBTECH QR Code Generator</title>
     
     <!-- External Database Files -->
-    <!-- Make sure these files are in the same folder as this HTML file -->
-    <script src="database_index.js"></script>
     <script src="qr_database.js"></script>
 
     <!-- QR Code Library -->
@@ -51,6 +49,26 @@
         #recentBtn:hover { background: #4745b8; }
         #recentBtn:active { transform: scale(0.95); }
 
+        /* Top Left Search Button */
+        #searchBtn {
+            position: fixed;
+            top: 20px;
+            left: 130px; /* Positioned to the right of Recent QR */
+            background: #34c759; 
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            z-index: 100;
+            transition: 0.2s;
+        }
+        #searchBtn:hover { background: #28a745; }
+        #searchBtn:active { transform: scale(0.95); }
+
         /* Top Right Tokens Button */
         #tokensBtn {
             position: fixed;
@@ -79,6 +97,26 @@
             padding: 25px;
             box-shadow: 0 10px 30px rgba(0,0,0,.12);
         }
+
+        /* Dark container for Search Modal */
+        .dark-container {
+            background: rgba(40, 40, 40, 0.85);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+        }
+        .dark-container h2 {
+            color: white;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .dark-container input {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+        .dark-container input::placeholder { color: #ccc; }
 
         h1 {
             text-align: center;
@@ -113,9 +151,7 @@
             box-shadow: 0 0 0 4px rgba(0,122,255,.15);
         }
 
-        input[list] {
-            cursor: text;
-        }
+        input[list] { cursor: text; }
 
         .model-box {
             display: flex;
@@ -284,9 +320,7 @@
             background: rgba(255, 255, 255, 0.2);
             transform: translateY(-2px);
         }
-        .recent-card:active {
-            transform: scale(0.98);
-        }
+        .recent-card:active { transform: scale(0.98); }
         .recent-card-title {
             font-size: 16px;
             font-weight: 600;
@@ -378,6 +412,7 @@
             .container { padding: 20px; border-radius: 16px; }
             h1 { font-size: 24px; }
             .close-btn { top: 20px; right: 20px; font-size: 40px; }
+            #searchBtn { left: 110px; } /* Prevent overlap on small screens */
         }
     </style>
 </head>
@@ -385,6 +420,9 @@
 
     <!-- Recent QR Button (Top Left) -->
     <button id="recentBtn" onclick="openRecentModal()">Recent QR</button>
+
+    <!-- Search Machine Button (Next to Recent QR) -->
+    <button id="searchBtn" onclick="openSearchModal()">Search Machine</button>
 
     <!-- Tokens Button (Top Right) -->
     <button id="tokensBtn" onclick="openTokensModal()">Tokens</button>
@@ -451,6 +489,17 @@
         <div id="recentList" class="recent-list"></div>
     </div>
 
+    <!-- Search Machine Modal -->
+    <div id="searchModal" class="modal">
+        <span class="close-btn" onclick="closeSearchModal()">&times;</span>
+        <div class="container dark-container">
+            <h2>Search Database</h2>
+            <input type="text" id="searchInput" placeholder="Enter Model, Serial, Date..." onkeypress="if(event.key==='Enter') searchMachine()">
+            <button class="generate-btn" onclick="searchMachine()" style="background: #34c759; margin-top: 15px;">Search</button>
+            <div id="searchResults" style="margin-top: 20px; max-height: 40vh; overflow-y: auto;"></div>
+        </div>
+    </div>
+
     <!-- Tokens Gallery Modal (Full Screen) -->
     <div id="tokensModal" class="modal">
         <span class="close-btn" onclick="closeTokensModal()">&times;</span>
@@ -487,17 +536,107 @@
         ];
 
         // =========================
-        // 48-Hour Expiry & Recent QR Logic (With qr_database.js Integration)
+        // Fetch Google Sheets Data
         // =========================
-        const EXPIRY_HOURS_MS = 48 * 60 * 60 * 1000; // 48 Hours in Milliseconds
+        const API_URL = "https://script.google.com/macros/s/AKfycbxPnecGYIQCX8zWk1W1fCHrcj70L_5koDVpBVxbqbgaYQ7RVJ8vm-b69P8xzp8ooANBLA/exec";
+        let liveSheetData = [];
+
+        async function fetchGoogleSheetData() {
+            try {
+                const response = await fetch(API_URL);
+                liveSheetData = await response.json();
+                updateSuggestions(); // Re-render dropdowns once data arrives
+            } catch (error) {
+                console.error("Error fetching data from Google Sheets:", error);
+            }
+        }
+
+        // =========================
+        // Handle Auto Suggestions (Live Google Sheets Sync)
+        // =========================
+        function updateSuggestions() {
+            const machineInput = document.getElementById("machine").value.trim();
+            const modelInput = document.getElementById("model").value.trim();
+
+            let availableMachines = new Set(DEFAULT_MACHINES);
+            let availableModels = new Set();
+            let availableSerials = new Set();
+
+            // 1. Process Google Sheets Data
+            liveSheetData.forEach(item => {
+                const dbMachine = item.machine.trim();
+                const dbModel = item.model.trim();
+                const dbSerial = item.serial.trim();
+
+                availableMachines.add(dbMachine);
+
+                // Modified logic: Show ALL serials for the selected machine, regardless of chosen model
+                if (dbMachine === machineInput) {
+                    let cleanModel = dbModel.startsWith("FEBTECH-") ? dbModel.replace("FEBTECH-", "") : dbModel;
+                    availableModels.add(cleanModel);
+                    availableSerials.add(dbSerial); // Unlocked from model condition
+                }
+            });
+
+            // 2. Process Local Custom Data (to preserve locally generated QRs)
+            const savedCustomData = JSON.parse(localStorage.getItem("custom_machine_data") || "[]");
+            savedCustomData.forEach(item => {
+                const parts = item.path.split('/');
+                if (parts.length >= 5) {
+                    const dbMachine = parts[2];
+                    const dbModel = parts[3];
+                    const dbSerial = parts[4];
+
+                    availableMachines.add(dbMachine);
+
+                    if (dbMachine === machineInput) {
+                        let cleanModel = dbModel.startsWith("FEBTECH-") ? dbModel.replace("FEBTECH-", "") : dbModel;
+                        availableModels.add(cleanModel);
+                        availableSerials.add(dbSerial); // Unlocked from model condition
+                    }
+                }
+            });
+
+            // 3. Populate Datalists
+            const machinesDatalist = document.getElementById("machines");
+            machinesDatalist.innerHTML = "";
+            availableMachines.forEach(m => {
+                let opt = document.createElement("option");
+                opt.value = m;
+                machinesDatalist.appendChild(opt);
+            });
+
+            const modelsDatalist = document.getElementById("models");
+            modelsDatalist.innerHTML = "";
+            availableModels.forEach(m => {
+                let opt = document.createElement("option");
+                opt.value = m;
+                modelsDatalist.appendChild(opt);
+            });
+
+            const serialsDatalist = document.getElementById("serials");
+            serialsDatalist.innerHTML = "";
+            availableSerials.forEach(s => {
+                let opt = document.createElement("option");
+                opt.value = s;
+                serialsDatalist.appendChild(opt);
+            });
+        }
+
+        document.getElementById("machine").addEventListener("input", updateSuggestions);
+        document.getElementById("machine").addEventListener("change", updateSuggestions);
+        // We removed model input listener since model selection no longer filters serials.
+
+        // =========================
+        // 48-Hour Expiry & Recent QR Logic 
+        // =========================
+        const EXPIRY_HOURS_MS = 48 * 60 * 60 * 1000;
 
         function getCleanRecentQRs() {
             let recentQRs = JSON.parse(localStorage.getItem("recent_qr_codes") || "[]");
             
-            // Merge in external QR_DATABASE if the file qr_database.js exists
             if (typeof QR_DATABASE !== "undefined" && Array.isArray(QR_DATABASE)) {
                 QR_DATABASE.forEach(dbItem => {
-                    // Only add if it doesn't already exist in recentQRs by serial
                     if (!recentQRs.some(item => item.serial === dbItem.serial)) {
                         recentQRs.push(dbItem);
                     }
@@ -505,30 +644,19 @@
             }
 
             const now = Date.now();
-            // Keep only QR codes created within the last 48 hours
             recentQRs = recentQRs.filter(item => (now - item.timestamp) < EXPIRY_HOURS_MS);
-            
-            // Sort by newest first
             recentQRs.sort((a, b) => b.timestamp - a.timestamp);
-
             localStorage.setItem("recent_qr_codes", JSON.stringify(recentQRs));
             return recentQRs;
         }
 
         function saveRecentQR(machine, model, serial, date, person, qrText) {
             let recentQRs = getCleanRecentQRs();
-            // Remove older duplicate if serial already exists
             recentQRs = recentQRs.filter(item => item.serial !== serial);
 
             recentQRs.unshift({
-                id: Date.now(),
-                timestamp: Date.now(),
-                machine,
-                model,
-                serial,
-                date,
-                person,
-                qrText
+                id: Date.now(), timestamp: Date.now(),
+                machine, model, serial, date, person, qrText
             });
 
             localStorage.setItem("recent_qr_codes", JSON.stringify(recentQRs));
@@ -576,7 +704,55 @@
         }
 
         // =========================
-        // Sync / Backup Data Across Devices (PC <-> iPhone)
+        // Search Machine Database
+        // =========================
+        function openSearchModal() {
+            document.getElementById('searchModal').style.display = 'flex';
+            document.getElementById('searchResults').innerHTML = '';
+            document.getElementById('searchInput').value = '';
+            document.getElementById('searchInput').focus();
+        }
+
+        function closeSearchModal() {
+            document.getElementById('searchModal').style.display = 'none';
+        }
+
+        function searchMachine() {
+            const query = document.getElementById('searchInput').value.trim().toLowerCase();
+            const resultsDiv = document.getElementById('searchResults');
+            
+            if (!query) {
+                resultsDiv.innerHTML = '<div style="text-align:center;">Please enter a search term.</div>';
+                return;
+            }
+
+            // Search across model, serial, and dateAdded
+            const results = liveSheetData.filter(item => {
+                return (item.model && item.model.toLowerCase().includes(query)) ||
+                       (item.serial && item.serial.toLowerCase().includes(query)) ||
+                       (item.dateAdded && item.dateAdded.toLowerCase().includes(query));
+            });
+
+            if (results.length > 0) {
+                let html = `<div style="margin-bottom:15px; font-weight:bold; color:#34c759;">Found ${results.length} matching machine(s):</div>`;
+                results.forEach(res => {
+                    html += `
+                    <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; margin-bottom: 10px; font-size: 14px; line-height: 1.5;">
+                        <strong>Machine:</strong> ${res.machine}<br>
+                        <strong>Model:</strong> ${res.model}<br>
+                        <strong>Serial:</strong> ${res.serial}<br>
+                        <strong>Date Added:</strong> ${res.dateAdded || 'N/A'}<br>
+                        <strong>By:</strong> ${res.responsible || 'N/A'}
+                    </div>`;
+                });
+                resultsDiv.innerHTML = html;
+            } else {
+                resultsDiv.innerHTML = '<div style="text-align:center; color: #ff453a; font-weight: 600;">❌ Machine not found in the database.</div>';
+            }
+        }
+
+        // =========================
+        // Sync / Backup Data Across Devices
         // =========================
         function exportSyncData() {
             const exportData = {
@@ -599,22 +775,16 @@
 
             try {
                 const importData = JSON.parse(decodeURIComponent(atob(input.trim())));
-                
-                // Merge custom machine data
                 const existingMachines = JSON.parse(localStorage.getItem("custom_machine_data") || "[]");
                 const mergedMachines = [...existingMachines, ...(importData.custom_machine_data || [])];
-                const uniqueMachines = Array.from(new Set(mergedMachines.map(a => a.path)))
-                    .map(path => mergedMachines.find(a => a.path === path));
+                const uniqueMachines = Array.from(new Set(mergedMachines.map(a => a.path))).map(path => mergedMachines.find(a => a.path === path));
                 localStorage.setItem("custom_machine_data", JSON.stringify(uniqueMachines));
 
-                // Merge recent QRs
                 const existingQRs = getCleanRecentQRs();
                 const mergedQRs = [...existingQRs, ...(importData.recent_qr_codes || [])];
-                const uniqueQRs = Array.from(new Set(mergedQRs.map(a => a.serial)))
-                    .map(serial => mergedQRs.find(a => a.serial === serial));
+                const uniqueQRs = Array.from(new Set(mergedQRs.map(a => a.serial))).map(serial => mergedQRs.find(a => a.serial === serial));
                 localStorage.setItem("recent_qr_codes", JSON.stringify(uniqueQRs));
 
-                // Merge persons
                 const existingPersons = JSON.parse(localStorage.getItem("persons") || "[]");
                 const mergedPersons = Array.from(new Set([...existingPersons, ...(importData.persons || [])]));
                 localStorage.setItem("persons", JSON.stringify(mergedPersons));
@@ -626,74 +796,6 @@
                 alert("Invalid Sync Code. Please make sure you copied the entire text correctly.");
             }
         }
-
-        // =========================
-        // Handle Auto Suggestions (NOW INCLUDES NEW MACHINES)
-        // =========================
-        function updateSuggestions() {
-            const machineInput = document.getElementById("machine").value.trim();
-            const modelInput = document.getElementById("model").value.trim();
-            const currentFullModel = modelInput ? "FEBTECH-" + modelInput : "";
-
-            let availableMachines = new Set(DEFAULT_MACHINES);
-            let availableModels = new Set();
-            let availableSerials = new Set();
-
-            let allData = [];
-            if (typeof MACHINE_DATA !== 'undefined') {
-                allData = allData.concat(MACHINE_DATA);
-            }
-            const savedCustomData = JSON.parse(localStorage.getItem("custom_machine_data") || "[]");
-            allData = allData.concat(savedCustomData);
-
-            allData.forEach(item => {
-                const parts = item.path.split('/');
-                if (parts.length >= 5) {
-                    const dbMachine = parts[2];
-                    const dbModel = parts[3];
-                    const dbSerial = parts[4];
-
-                    availableMachines.add(dbMachine);
-
-                    if (dbMachine === machineInput) {
-                        let cleanModel = dbModel.startsWith("FEBTECH-") ? dbModel.replace("FEBTECH-", "") : dbModel;
-                        availableModels.add(cleanModel);
-
-                        if (currentFullModel === "" || dbModel === currentFullModel) {
-                            availableSerials.add(dbSerial);
-                        }
-                    }
-                }
-            });
-
-            const machinesDatalist = document.getElementById("machines");
-            machinesDatalist.innerHTML = "";
-            availableMachines.forEach(m => {
-                let opt = document.createElement("option");
-                opt.value = m;
-                machinesDatalist.appendChild(opt);
-            });
-
-            const modelsDatalist = document.getElementById("models");
-            modelsDatalist.innerHTML = "";
-            availableModels.forEach(m => {
-                let opt = document.createElement("option");
-                opt.value = m;
-                modelsDatalist.appendChild(opt);
-            });
-
-            const serialsDatalist = document.getElementById("serials");
-            serialsDatalist.innerHTML = "";
-            availableSerials.forEach(s => {
-                let opt = document.createElement("option");
-                opt.value = s;
-                serialsDatalist.appendChild(opt);
-            });
-        }
-
-        document.getElementById("machine").addEventListener("input", updateSuggestions);
-        document.getElementById("machine").addEventListener("change", updateSuggestions);
-        document.getElementById("model").addEventListener("input", updateSuggestions);
 
         // =========================
         // Load Saved Persons
@@ -760,7 +862,14 @@
             if (!/^\d{2}\/\d{4}$/.test(date)) return alert("Date must be MM/YYYY");
             if (person == "") return alert("Enter Responsible Person");
 
-            // 1. Save New Person
+            // Duplicate Check Warning
+            const serialExists = liveSheetData.some(item => item.serial === serial);
+            if (serialExists) {
+                const proceed = confirm("⚠️ This Serial Number is already available in the Database.\n\nDo you still want to continue and generate the QR code to add more images/records?");
+                if (!proceed) return; // Stop if user clicks Cancel
+            }
+
+            // Save New Person
             if (!savedPersons.includes(person) &&
                 person != "Mr. Amrut Deshmukh" &&
                 person != "Mr. Rajaram Mithe" &&
@@ -775,7 +884,7 @@
 
             const model = "FEBTECH-" + modelInput;
             
-            // 2. Save Custom Machine Name/Model/Serial to localStorage
+            // Save Custom Machine Name/Model/Serial to localStorage
             const newPath = `./data/${machine}/${model}/${serial}/custom_entry/img.jpg`;
             const savedCustomData = JSON.parse(localStorage.getItem("custom_machine_data") || "[]");
             if (!savedCustomData.some(item => item.path === newPath)) {
@@ -783,28 +892,16 @@
                 localStorage.setItem("custom_machine_data", JSON.stringify(savedCustomData));
             }
 
-            // Refresh suggestions so the new machine name immediately shows up in dropdowns
             updateSuggestions();
 
-            // 3. Setup QR text format
             const qrText = `##########-THIS_NEW_START-##########\n${machine}\n${model}\n${serial}\n${date}\n${person}`;
 
-            // 4. Save to Recent QR History (valid for 48 hours)
             saveRecentQR(machine, model, serial, date, person, qrText);
-
-            // 5. Render Modal
             renderQRModal(machine, model, serial, date, person, qrText);
         }
 
-        // =========================
-        // Modal Controls (QR)
-        // =========================
-        function openQRModal() {
-            document.getElementById('qrModal').style.display = 'flex';
-        }
-        function closeQRModal() {
-            document.getElementById('qrModal').style.display = 'none';
-        }
+        function openQRModal() { document.getElementById('qrModal').style.display = 'flex'; }
+        function closeQRModal() { document.getElementById('qrModal').style.display = 'none'; }
 
         // =========================
         // Tokens Slider Logic
@@ -852,18 +949,10 @@
             updateTokenView();
         }
 
-        // Touch Swipe functionality for iPhone/Mobile
         let touchStartX = 0;
         let touchEndX = 0;
-        
-        tokenImgElement.addEventListener('touchstart', e => {
-            touchStartX = e.changedTouches[0].screenX;
-        });
-
-        tokenImgElement.addEventListener('touchend', e => {
-            touchEndX = e.changedTouches[0].screenX;
-            handleSwipe();
-        });
+        tokenImgElement.addEventListener('touchstart', e => { touchStartX = e.changedTouches[0].screenX; });
+        tokenImgElement.addEventListener('touchend', e => { touchEndX = e.changedTouches[0].screenX; handleSwipe(); });
 
         function handleSwipe() {
             if (touchEndX < touchStartX - 40) nextToken();
@@ -874,8 +963,12 @@
         // ENTER & ESCAPE KEYS
         // =========================
         document.addEventListener("keydown", function(e) {
+            const searchModal = document.getElementById('searchModal');
             if (e.key === "Enter") {
-                if (document.getElementById('qrModal').style.display !== 'flex' && 
+                if (searchModal.style.display === 'flex') {
+                    // Enter key inside search modal triggers search
+                    searchMachine();
+                } else if (document.getElementById('qrModal').style.display !== 'flex' && 
                     document.getElementById('tokensModal').style.display !== 'flex' &&
                     document.getElementById('recentModal').style.display !== 'flex') {
                     generateQR();
@@ -885,12 +978,14 @@
                 closeQRModal();
                 closeTokensModal();
                 closeRecentModal();
+                closeSearchModal();
             }
         });
         
-        // Initialize suggestions & clean expired 48-hr QRs on load
+        // Initialize
         window.onload = function() {
             updateSuggestions();
+            fetchGoogleSheetData();
             getCleanRecentQRs();
         };
     </script>
