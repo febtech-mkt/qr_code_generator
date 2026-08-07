@@ -29,65 +29,41 @@
             padding: 20px;
         }
 
-        /* Top Left Recent QR Button */
-        #recentBtn {
+        /* Top Buttons Shared Styles */
+        .top-btn {
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            z-index: 100;
+            transition: 0.2s;
+        }
+        .top-btn:hover { filter: brightness(1.1); }
+        .top-btn:active { transform: scale(0.95); }
+
+        /* Group left buttons to prevent overlap */
+        .top-left-controls {
             position: fixed;
             top: 20px;
             left: 20px;
-            background: #5856d6;
-            color: white;
-            border: none;
-            border-radius: 20px;
-            padding: 8px 16px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            display: flex;
+            gap: 10px;
             z-index: 100;
-            transition: 0.2s;
         }
-        #recentBtn:hover { background: #4745b8; }
-        #recentBtn:active { transform: scale(0.95); }
 
-        /* Top Left Search Button */
-        #searchBtn {
-            position: fixed;
-            top: 20px;
-            left: 130px; /* Positioned to the right of Recent QR */
-            background: #34c759; 
-            color: white;
-            border: none;
-            border-radius: 20px;
-            padding: 8px 16px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-            z-index: 100;
-            transition: 0.2s;
-        }
-        #searchBtn:hover { background: #28a745; }
-        #searchBtn:active { transform: scale(0.95); }
-
-        /* Top Right Tokens Button */
+        #recentBtn { background: #5856d6; }
+        #searchBtn { background: #34c759; }
+        
         #tokensBtn {
             position: fixed;
             top: 20px;
             right: 20px;
             background: #ff9500; 
-            color: white;
-            border: none;
-            border-radius: 20px;
-            padding: 8px 16px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-            z-index: 100;
-            transition: 0.2s;
         }
-        #tokensBtn:hover { background: #e08300; }
-        #tokensBtn:active { transform: scale(0.95); }
 
         .container {
             width: 100%;
@@ -105,6 +81,7 @@
             -webkit-backdrop-filter: blur(15px);
             border: 1px solid rgba(255,255,255,0.2);
             color: white;
+            max-width: 480px;
         }
         .dark-container h2 {
             color: white;
@@ -115,6 +92,10 @@
             background: rgba(255,255,255,0.1);
             color: white;
             border: 1px solid rgba(255,255,255,0.3);
+        }
+        .dark-container input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(1); /* Makes the calendar icon white */
+            cursor: pointer;
         }
         .dark-container input::placeholder { color: #ccc; }
 
@@ -412,20 +393,24 @@
             .container { padding: 20px; border-radius: 16px; }
             h1 { font-size: 24px; }
             .close-btn { top: 20px; right: 20px; font-size: 40px; }
-            #searchBtn { left: 110px; } /* Prevent overlap on small screens */
+            
+            /* Responsive Top Buttons */
+            .top-left-controls { left: 10px; gap: 6px; }
+            .top-btn { padding: 6px 10px; font-size: 12px; }
+            #tokensBtn { right: 10px; }
         }
     </style>
 </head>
 <body>
 
-    <!-- Recent QR Button (Top Left) -->
-    <button id="recentBtn" onclick="openRecentModal()">Recent QR</button>
+    <!-- Top Left Buttons -->
+    <div class="top-left-controls">
+        <button id="recentBtn" class="top-btn" onclick="openRecentModal()">Recent QR</button>
+        <button id="searchBtn" class="top-btn" onclick="openSearchModal()">Search Machine</button>
+    </div>
 
-    <!-- Search Machine Button (Next to Recent QR) -->
-    <button id="searchBtn" onclick="openSearchModal()">Search Machine</button>
-
-    <!-- Tokens Button (Top Right) -->
-    <button id="tokensBtn" onclick="openTokensModal()">Tokens</button>
+    <!-- Top Right Tokens Button -->
+    <button id="tokensBtn" class="top-btn" onclick="openTokensModal()">Tokens</button>
 
     <!-- Main Generator Container -->
     <div class="container">
@@ -494,9 +479,23 @@
         <span class="close-btn" onclick="closeSearchModal()">&times;</span>
         <div class="container dark-container">
             <h2>Search Database</h2>
-            <input type="text" id="searchInput" placeholder="Enter Model, Serial, Date..." onkeypress="if(event.key==='Enter') searchMachine()">
-            <button class="generate-btn" onclick="searchMachine()" style="background: #34c759; margin-top: 15px;">Search</button>
-            <div id="searchResults" style="margin-top: 20px; max-height: 40vh; overflow-y: auto;"></div>
+            
+            <label style="color: #ddd; margin-top: 0;">Search Text</label>
+            <input type="text" id="searchInput" placeholder="Machine, Model, Serial, Client..." onkeypress="if(event.key==='Enter') searchMachine()" style="margin-bottom: 15px;">
+            
+            <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                <div style="flex: 1;">
+                    <label style="color: #ddd; margin-top: 0;">From Date</label>
+                    <input type="date" id="searchFromDate" style="padding: 0 10px;">
+                </div>
+                <div style="flex: 1;">
+                    <label style="color: #ddd; margin-top: 0;">To Date</label>
+                    <input type="date" id="searchToDate" style="padding: 0 10px;">
+                </div>
+            </div>
+
+            <button class="generate-btn" onclick="searchMachine()" style="background: #34c759; margin-top: 10px;">Search</button>
+            <div id="searchResults" style="margin-top: 20px; max-height: 40vh; overflow-y: auto; padding-right: 5px;"></div>
         </div>
     </div>
 
@@ -570,7 +569,7 @@
 
                 availableMachines.add(dbMachine);
 
-                // Modified logic: Show ALL serials for the selected machine, regardless of chosen model
+                // Show ALL serials for the selected machine, regardless of chosen model
                 if (dbMachine === machineInput) {
                     let cleanModel = dbModel.startsWith("FEBTECH-") ? dbModel.replace("FEBTECH-", "") : dbModel;
                     availableModels.add(cleanModel);
@@ -710,6 +709,8 @@
             document.getElementById('searchModal').style.display = 'flex';
             document.getElementById('searchResults').innerHTML = '';
             document.getElementById('searchInput').value = '';
+            document.getElementById('searchFromDate').value = '';
+            document.getElementById('searchToDate').value = '';
             document.getElementById('searchInput').focus();
         }
 
@@ -719,18 +720,59 @@
 
         function searchMachine() {
             const query = document.getElementById('searchInput').value.trim().toLowerCase();
+            const fromDateVal = document.getElementById('searchFromDate').value;
+            const toDateVal = document.getElementById('searchToDate').value;
             const resultsDiv = document.getElementById('searchResults');
             
-            if (!query) {
-                resultsDiv.innerHTML = '<div style="text-align:center;">Please enter a search term.</div>';
+            if (!query && !fromDateVal && !toDateVal) {
+                resultsDiv.innerHTML = '<div style="text-align:center;">Please enter a search term or select a date range.</div>';
                 return;
             }
 
-            // Search across model, serial, and dateAdded
+            // Prep Dates
+            const fromDate = fromDateVal ? new Date(fromDateVal) : null;
+            if (fromDate) fromDate.setHours(0, 0, 0, 0); // Start of day
+
+            const toDate = toDateVal ? new Date(toDateVal) : null;
+            if (toDate) toDate.setHours(23, 59, 59, 999); // End of day
+
             const results = liveSheetData.filter(item => {
-                return (item.model && item.model.toLowerCase().includes(query)) ||
-                       (item.serial && item.serial.toLowerCase().includes(query)) ||
-                       (item.dateAdded && item.dateAdded.toLowerCase().includes(query));
+                
+                // 1. Check Text Fields (Machine, Model, Serial, Client)
+                let textMatch = true;
+                if (query) {
+                    textMatch = (item.machine && item.machine.toLowerCase().includes(query)) ||
+                                (item.model && item.model.toLowerCase().includes(query)) ||
+                                (item.serial && item.serial.toLowerCase().includes(query)) ||
+                                (item.client && item.client.toLowerCase().includes(query));
+                }
+
+                // 2. Check Date Range
+                let dateMatch = true;
+                if (fromDate || toDate) {
+                    if (!item.dateAdded) {
+                        dateMatch = false; // Cannot match range if no date is recorded
+                    } else {
+                        let itemDate = new Date(item.dateAdded);
+                        
+                        // Fallback parsing if Google Sheets returns MM/YYYY strings
+                        if (isNaN(itemDate.getTime())) {
+                            const parts = item.dateAdded.split('/');
+                            if(parts.length === 2) {
+                                itemDate = new Date(parts[1], parts[0] - 1, 1);
+                            }
+                        }
+
+                        if (!isNaN(itemDate.getTime())) {
+                            if (fromDate && itemDate < fromDate) dateMatch = false;
+                            if (toDate && itemDate > toDate) dateMatch = false;
+                        } else {
+                            dateMatch = false; // Unparseable Date
+                        }
+                    }
+                }
+
+                return textMatch && dateMatch;
             });
 
             if (results.length > 0) {
@@ -741,13 +783,14 @@
                         <strong>Machine:</strong> ${res.machine}<br>
                         <strong>Model:</strong> ${res.model}<br>
                         <strong>Serial:</strong> ${res.serial}<br>
+                        <strong>Client:</strong> ${res.client || 'N/A'}<br>
                         <strong>Date Added:</strong> ${res.dateAdded || 'N/A'}<br>
                         <strong>By:</strong> ${res.responsible || 'N/A'}
                     </div>`;
                 });
                 resultsDiv.innerHTML = html;
             } else {
-                resultsDiv.innerHTML = '<div style="text-align:center; color: #ff453a; font-weight: 600;">❌ Machine not found in the database.</div>';
+                resultsDiv.innerHTML = '<div style="text-align:center; color: #ff453a; font-weight: 600;">❌ No machines found matching your criteria.</div>';
             }
         }
 
@@ -966,7 +1009,6 @@
             const searchModal = document.getElementById('searchModal');
             if (e.key === "Enter") {
                 if (searchModal.style.display === 'flex') {
-                    // Enter key inside search modal triggers search
                     searchMachine();
                 } else if (document.getElementById('qrModal').style.display !== 'flex' && 
                     document.getElementById('tokensModal').style.display !== 'flex' &&
