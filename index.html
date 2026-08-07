@@ -94,7 +94,7 @@
             border: 1px solid rgba(255,255,255,0.3);
         }
         .dark-container input[type="date"]::-webkit-calendar-picker-indicator {
-            filter: invert(1); /* Makes the calendar icon white */
+            filter: invert(1);
             cursor: pointer;
         }
         .dark-container input::placeholder { color: #ccc; }
@@ -258,30 +258,10 @@
             margin-bottom: 15px;
             text-align: center;
         }
-        .sync-toolbar {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
-            width: 100%;
-            max-width: 450px;
-            justify-content: center;
-        }
-        .sync-btn {
-            background: rgba(255, 255, 255, 0.2);
-            color: white;
-            border: 1px solid rgba(255,255,255,0.3);
-            border-radius: 10px;
-            padding: 8px 14px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: 0.2s;
-        }
-        .sync-btn:hover { background: rgba(255, 255, 255, 0.3); }
         .recent-list {
             width: 100%;
             max-width: 450px;
-            max-height: 60vh;
+            max-height: 70vh;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
@@ -463,14 +443,8 @@
     <div id="recentModal" class="modal">
         <span class="close-btn" onclick="closeRecentModal()">&times;</span>
         <div class="recent-modal-header">Recent QR Codes</div>
-        <div class="recent-modal-subtitle">Auto-deletes after 48 hours • Click to view</div>
+        <div class="recent-modal-subtitle">Synced across all devices • Auto-deletes after 48 hours</div>
         
-        <!-- Sync Toolbar to share data between iPhone & PC -->
-        <div class="sync-toolbar">
-            <button class="sync-btn" onclick="exportSyncData()">Export Sync Code</button>
-            <button class="sync-btn" onclick="importSyncData()">Import Sync Code</button>
-        </div>
-
         <div id="recentList" class="recent-list"></div>
     </div>
 
@@ -481,18 +455,22 @@
             <h2>Search Database</h2>
             
             <label style="color: #ddd; margin-top: 0;">Search Text</label>
-            <input type="text" id="searchInput" placeholder="Machine, Model, Serial, Client..." onkeypress="if(event.key==='Enter') searchMachine()" style="margin-bottom: 15px;">
+            <input type="text" id="searchInput" placeholder="Machine, Model, Serial, Client..." onkeypress="if(event.key==='Enter') searchMachine()" style="margin-bottom: 10px;">
             
-            <div style="display: flex; gap: 15px; margin-bottom: 15px;">
-                <div style="flex: 1;">
-                    <label style="color: #ddd; margin-top: 0;">From Date</label>
-                    <input type="date" id="searchFromDate" style="padding: 0 10px;">
+            <!-- Collapsible Date Filter to save space -->
+            <details style="margin-bottom: 15px; cursor: pointer;">
+                <summary style="color: #34c759; font-weight: bold; outline: none;">+ Add Date Filter</summary>
+                <div style="display: flex; gap: 15px; margin-top: 10px;">
+                    <div style="flex: 1;">
+                        <label style="color: #ddd; margin-top: 0; font-size: 13px;">From Date</label>
+                        <input type="date" id="searchFromDate" style="padding: 0 10px; height: 40px;">
+                    </div>
+                    <div style="flex: 1;">
+                        <label style="color: #ddd; margin-top: 0; font-size: 13px;">To Date</label>
+                        <input type="date" id="searchToDate" style="padding: 0 10px; height: 40px;">
+                    </div>
                 </div>
-                <div style="flex: 1;">
-                    <label style="color: #ddd; margin-top: 0;">To Date</label>
-                    <input type="date" id="searchToDate" style="padding: 0 10px;">
-                </div>
-            </div>
+            </details>
 
             <button class="generate-btn" onclick="searchMachine()" style="background: #34c759; margin-top: 10px;">Search</button>
             <div id="searchResults" style="margin-top: 20px; max-height: 40vh; overflow-y: auto; padding-right: 5px;"></div>
@@ -537,13 +515,21 @@
         // =========================
         // Fetch Google Sheets Data
         // =========================
-        const API_URL = "https://script.google.com/macros/s/AKfycbxPnecGYIQCX8zWk1W1fCHrcj70L_5koDVpBVxbqbgaYQ7RVJ8vm-b69P8xzp8ooANBLA/exec";
-        let liveSheetData = [];
+        const API_URL = "https://script.google.com/macros/s/AKfycbxHsrs7C2PKLUhwO9oILKx4fczyGdzPa3q0mxzIEVRN6zHQrC_eeDMwRuERlWGBROVa_g/exec";
+        
+        let liveSheetData = [];   // Main Machine Database
+        let cloudRecentQRs = [];  // Centralized Recent QRs
 
         async function fetchGoogleSheetData() {
             try {
                 const response = await fetch(API_URL);
-                liveSheetData = await response.json();
+                const data = await response.json();
+                
+                liveSheetData = data.machines || [];
+                
+                // Sort recent QRs newest first
+                cloudRecentQRs = (data.recentQRs || []).sort((a, b) => b.timestamp - a.timestamp);
+                
                 updateSuggestions(); // Re-render dropdowns once data arrives
             } catch (error) {
                 console.error("Error fetching data from Google Sheets:", error);
@@ -551,7 +537,7 @@
         }
 
         // =========================
-        // Handle Auto Suggestions (Live Google Sheets Sync)
+        // Handle Auto Suggestions
         // =========================
         function updateSuggestions() {
             const machineInput = document.getElementById("machine").value.trim();
@@ -569,30 +555,10 @@
 
                 availableMachines.add(dbMachine);
 
-                // Show ALL serials for the selected machine, regardless of chosen model
                 if (dbMachine === machineInput) {
                     let cleanModel = dbModel.startsWith("FEBTECH-") ? dbModel.replace("FEBTECH-", "") : dbModel;
                     availableModels.add(cleanModel);
                     availableSerials.add(dbSerial); // Unlocked from model condition
-                }
-            });
-
-            // 2. Process Local Custom Data (to preserve locally generated QRs)
-            const savedCustomData = JSON.parse(localStorage.getItem("custom_machine_data") || "[]");
-            savedCustomData.forEach(item => {
-                const parts = item.path.split('/');
-                if (parts.length >= 5) {
-                    const dbMachine = parts[2];
-                    const dbModel = parts[3];
-                    const dbSerial = parts[4];
-
-                    availableMachines.add(dbMachine);
-
-                    if (dbMachine === machineInput) {
-                        let cleanModel = dbModel.startsWith("FEBTECH-") ? dbModel.replace("FEBTECH-", "") : dbModel;
-                        availableModels.add(cleanModel);
-                        availableSerials.add(dbSerial); // Unlocked from model condition
-                    }
                 }
             });
 
@@ -624,52 +590,23 @@
 
         document.getElementById("machine").addEventListener("input", updateSuggestions);
         document.getElementById("machine").addEventListener("change", updateSuggestions);
-        // We removed model input listener since model selection no longer filters serials.
 
         // =========================
-        // 48-Hour Expiry & Recent QR Logic 
+        // Centralized Recent QR Logic
         // =========================
-        const EXPIRY_HOURS_MS = 48 * 60 * 60 * 1000;
-
-        function getCleanRecentQRs() {
-            let recentQRs = JSON.parse(localStorage.getItem("recent_qr_codes") || "[]");
-            
-            if (typeof QR_DATABASE !== "undefined" && Array.isArray(QR_DATABASE)) {
-                QR_DATABASE.forEach(dbItem => {
-                    if (!recentQRs.some(item => item.serial === dbItem.serial)) {
-                        recentQRs.push(dbItem);
-                    }
-                });
-            }
-
-            const now = Date.now();
-            recentQRs = recentQRs.filter(item => (now - item.timestamp) < EXPIRY_HOURS_MS);
-            recentQRs.sort((a, b) => b.timestamp - a.timestamp);
-            localStorage.setItem("recent_qr_codes", JSON.stringify(recentQRs));
-            return recentQRs;
-        }
-
-        function saveRecentQR(machine, model, serial, date, person, qrText) {
-            let recentQRs = getCleanRecentQRs();
-            recentQRs = recentQRs.filter(item => item.serial !== serial);
-
-            recentQRs.unshift({
-                id: Date.now(), timestamp: Date.now(),
-                machine, model, serial, date, person, qrText
-            });
-
-            localStorage.setItem("recent_qr_codes", JSON.stringify(recentQRs));
-        }
-
-        function openRecentModal() {
-            const recentQRs = getCleanRecentQRs();
+        async function openRecentModal() {
+            document.getElementById("recentModal").style.display = "flex";
             const recentList = document.getElementById("recentList");
+            recentList.innerHTML = `<div class="recent-empty">Connecting to Cloud Server...<br>Fetching latest team QRs...</div>`;
+            
+            // Force fetch to get QRs generated by other devices right now
+            await fetchGoogleSheetData(); 
+            
             recentList.innerHTML = "";
-
-            if (recentQRs.length === 0) {
-                recentList.innerHTML = `<div class="recent-empty">No recent QR codes found.<br>Any QR older than 48 hours is automatically deleted.</div>`;
+            if (cloudRecentQRs.length === 0) {
+                recentList.innerHTML = `<div class="recent-empty">No recent QR codes found in the cloud.<br>Any QR older than 48 hours is automatically excluded.</div>`;
             } else {
-                recentQRs.forEach(item => {
+                cloudRecentQRs.forEach(item => {
                     const hoursAgo = Math.floor((Date.now() - item.timestamp) / (1000 * 60 * 60));
                     const minsAgo = Math.floor(((Date.now() - item.timestamp) % (1000 * 60 * 60)) / (1000 * 60));
                     const timeText = hoursAgo > 0 ? `${hoursAgo}h ${minsAgo}m ago` : `${minsAgo}m ago`;
@@ -689,8 +626,6 @@
                     recentList.appendChild(card);
                 });
             }
-
-            document.getElementById("recentModal").style.display = "flex";
         }
 
         function closeRecentModal() {
@@ -725,20 +660,18 @@
             const resultsDiv = document.getElementById('searchResults');
             
             if (!query && !fromDateVal && !toDateVal) {
-                resultsDiv.innerHTML = '<div style="text-align:center;">Please enter a search term or select a date range.</div>';
+                resultsDiv.innerHTML = '<div style="text-align:center;">Please enter a search term or select a date filter.</div>';
                 return;
             }
 
             // Prep Dates
             const fromDate = fromDateVal ? new Date(fromDateVal) : null;
-            if (fromDate) fromDate.setHours(0, 0, 0, 0); // Start of day
+            if (fromDate) fromDate.setHours(0, 0, 0, 0);
 
             const toDate = toDateVal ? new Date(toDateVal) : null;
-            if (toDate) toDate.setHours(23, 59, 59, 999); // End of day
+            if (toDate) toDate.setHours(23, 59, 59, 999);
 
             const results = liveSheetData.filter(item => {
-                
-                // 1. Check Text Fields (Machine, Model, Serial, Client)
                 let textMatch = true;
                 if (query) {
                     textMatch = (item.machine && item.machine.toLowerCase().includes(query)) ||
@@ -747,31 +680,25 @@
                                 (item.client && item.client.toLowerCase().includes(query));
                 }
 
-                // 2. Check Date Range
                 let dateMatch = true;
                 if (fromDate || toDate) {
                     if (!item.dateAdded) {
-                        dateMatch = false; // Cannot match range if no date is recorded
+                        dateMatch = false; 
                     } else {
                         let itemDate = new Date(item.dateAdded);
-                        
-                        // Fallback parsing if Google Sheets returns MM/YYYY strings
                         if (isNaN(itemDate.getTime())) {
                             const parts = item.dateAdded.split('/');
-                            if(parts.length === 2) {
-                                itemDate = new Date(parts[1], parts[0] - 1, 1);
-                            }
+                            if(parts.length === 2) itemDate = new Date(parts[1], parts[0] - 1, 1);
                         }
 
                         if (!isNaN(itemDate.getTime())) {
                             if (fromDate && itemDate < fromDate) dateMatch = false;
                             if (toDate && itemDate > toDate) dateMatch = false;
                         } else {
-                            dateMatch = false; // Unparseable Date
+                            dateMatch = false;
                         }
                     }
                 }
-
                 return textMatch && dateMatch;
             });
 
@@ -795,57 +722,10 @@
         }
 
         // =========================
-        // Sync / Backup Data Across Devices
-        // =========================
-        function exportSyncData() {
-            const exportData = {
-                custom_machine_data: JSON.parse(localStorage.getItem("custom_machine_data") || "[]"),
-                recent_qr_codes: getCleanRecentQRs(),
-                persons: JSON.parse(localStorage.getItem("persons") || "[]")
-            };
-            const syncString = btoa(encodeURIComponent(JSON.stringify(exportData)));
-            
-            navigator.clipboard.writeText(syncString).then(() => {
-                alert("Sync Code COPIED to clipboard!\n\nEmail or send this text to your PC/iPhone and click 'Import Sync Code' to sync all your recent QRs and newly added machines!");
-            }).catch(() => {
-                prompt("Copy this Sync Code manually:", syncString);
-            });
-        }
-
-        function importSyncData() {
-            const input = prompt("Paste your Sync Code here to import your Recent QRs and Custom Machines:");
-            if (!input) return;
-
-            try {
-                const importData = JSON.parse(decodeURIComponent(atob(input.trim())));
-                const existingMachines = JSON.parse(localStorage.getItem("custom_machine_data") || "[]");
-                const mergedMachines = [...existingMachines, ...(importData.custom_machine_data || [])];
-                const uniqueMachines = Array.from(new Set(mergedMachines.map(a => a.path))).map(path => mergedMachines.find(a => a.path === path));
-                localStorage.setItem("custom_machine_data", JSON.stringify(uniqueMachines));
-
-                const existingQRs = getCleanRecentQRs();
-                const mergedQRs = [...existingQRs, ...(importData.recent_qr_codes || [])];
-                const uniqueQRs = Array.from(new Set(mergedQRs.map(a => a.serial))).map(serial => mergedQRs.find(a => a.serial === serial));
-                localStorage.setItem("recent_qr_codes", JSON.stringify(uniqueQRs));
-
-                const existingPersons = JSON.parse(localStorage.getItem("persons") || "[]");
-                const mergedPersons = Array.from(new Set([...existingPersons, ...(importData.persons || [])]));
-                localStorage.setItem("persons", JSON.stringify(mergedPersons));
-
-                alert("Success! Your Recent QR codes and custom machines have been imported and synced!");
-                updateSuggestions();
-                openRecentModal();
-            } catch (e) {
-                alert("Invalid Sync Code. Please make sure you copied the entire text correctly.");
-            }
-        }
-
-        // =========================
         // Load Saved Persons
         // =========================
         const personList = document.getElementById("persons");
         let savedPersons = JSON.parse(localStorage.getItem("persons")) || [];
-
         savedPersons.forEach(name => {
             const option = document.createElement("option");
             option.value = name;
@@ -859,9 +739,7 @@
         dateInput.addEventListener("input", function () {
             let value = this.value.replace(/\D/g, "");
             if (value.length > 6) value = value.substring(0, 6);
-            if (value.length >= 3) {
-                value = value.substring(0, 2) + "/" + value.substring(2);
-            }
+            if (value.length >= 3) value = value.substring(0, 2) + "/" + value.substring(2);
             this.value = value;
         });
 
@@ -888,11 +766,10 @@
                 <div><strong>Date:</strong> ${date}</div>
                 <div><strong>Responsible:</strong> ${person}</div>
             `;
-
             openQRModal();
         }
 
-        function generateQR() {
+        async function generateQR() {
             const machine = document.getElementById("machine").value.trim();
             const modelInput = document.getElementById("model").value.trim();
             const serial = document.getElementById("serial").value.trim();
@@ -909,15 +786,11 @@
             const serialExists = liveSheetData.some(item => item.serial === serial);
             if (serialExists) {
                 const proceed = confirm("⚠️ This Serial Number is already available in the Database.\n\nDo you still want to continue and generate the QR code to add more images/records?");
-                if (!proceed) return; // Stop if user clicks Cancel
+                if (!proceed) return; 
             }
 
-            // Save New Person
-            if (!savedPersons.includes(person) &&
-                person != "Mr. Amrut Deshmukh" &&
-                person != "Mr. Rajaram Mithe" &&
-                person != "Mr. Umesh Kale") {
-                
+            // Save New Person locally
+            if (!savedPersons.includes(person) && person != "Mr. Amrut Deshmukh" && person != "Mr. Rajaram Mithe" && person != "Mr. Umesh Kale") {
                 savedPersons.push(person);
                 localStorage.setItem("persons", JSON.stringify(savedPersons));
                 const option = document.createElement("option");
@@ -926,21 +799,35 @@
             }
 
             const model = "FEBTECH-" + modelInput;
-            
-            // Save Custom Machine Name/Model/Serial to localStorage
-            const newPath = `./data/${machine}/${model}/${serial}/custom_entry/img.jpg`;
-            const savedCustomData = JSON.parse(localStorage.getItem("custom_machine_data") || "[]");
-            if (!savedCustomData.some(item => item.path === newPath)) {
-                savedCustomData.push({ path: newPath, date: new Date().toISOString() });
-                localStorage.setItem("custom_machine_data", JSON.stringify(savedCustomData));
-            }
-
-            updateSuggestions();
-
             const qrText = `##########-THIS_NEW_START-##########\n${machine}\n${model}\n${serial}\n${date}\n${person}`;
 
-            saveRecentQR(machine, model, serial, date, person, qrText);
+            // Render immediately for UI Speed
             renderQRModal(machine, model, serial, date, person, qrText);
+
+            // POST to Google Sheet Cloud
+            const payload = {
+                timestamp: Date.now(),
+                machine: machine,
+                model: model,
+                serial: serial,
+                date: date,
+                person: person,
+                qrText: qrText
+            };
+
+            // Add optimistically to current cloud array
+            cloudRecentQRs.unshift(payload);
+
+            try {
+                await fetch(API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "text/plain;charset=utf-8" },
+                    body: JSON.stringify(payload)
+                });
+                console.log("QR Code successfully saved to cloud.");
+            } catch (e) {
+                console.error("Error saving QR Code to cloud.", e);
+            }
         }
 
         function openQRModal() { document.getElementById('qrModal').style.display = 'flex'; }
@@ -1027,8 +914,7 @@
         // Initialize
         window.onload = function() {
             updateSuggestions();
-            fetchGoogleSheetData();
-            getCleanRecentQRs();
+            fetchGoogleSheetData(); // Initial background fetch to populate data
         };
     </script>
 </body>
