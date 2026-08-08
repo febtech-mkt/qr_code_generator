@@ -522,7 +522,10 @@
 
         async function fetchGoogleSheetData() {
             try {
-                const response = await fetch(API_URL);
+                // Add a cache-buster parameter so browsers don't load stale, cached data
+                const urlWithCacheBuster = API_URL + "?t=" + new Date().getTime();
+                
+                const response = await fetch(urlWithCacheBuster, { redirect: "follow" });
                 const data = await response.json();
                 
                 liveSheetData = data.machines || [];
