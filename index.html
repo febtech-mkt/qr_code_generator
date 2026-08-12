@@ -569,25 +569,35 @@
         
         let liveSheetData = [];   
         let cloudRecentQRs = [];  
-        let isFetching = false; // Prevents overlapping requests
+        let fetchPromise = null; // Store the promise so multiple calls share the same fetch
 
         async function fetchGoogleSheetData() {
-            if (isFetching) return; 
-            isFetching = true;
-            try {
-                const urlWithCacheBuster = API_URL + "?t=" + new Date().getTime();
-                const response = await fetch(urlWithCacheBuster, { redirect: "follow" });
-                const data = await response.json();
-                
-                liveSheetData = data.machines || [];
-                cloudRecentQRs = (data.recentQRs || []).sort((a, b) => b.timestamp - a.timestamp);
-                
-                updateSuggestions(); 
-            } catch (error) {
-                console.error("Error fetching data from Google Sheets:", error);
-            } finally {
-                isFetching = false;
-            }
+            if (fetchPromise) return fetchPromise; // Return the ongoing fetch if already downloading
+            
+            fetchPromise = (async () => {
+                try {
+                    const urlWithCacheBuster = API_URL + "?t=" + new Date().getTime();
+                    const response = await fetch(urlWithCacheBuster, { redirect: "follow" });
+                    const data = await response.json();
+                    
+                    liveSheetData = data.machines || [];
+                    cloudRecentQRs = (data.recentQRs || []).sort((a, b) => b.timestamp - a.timestamp);
+                    
+                    updateSuggestions(); 
+                    
+                    // If the user has the Recent QR modal open when the data finishes downloading, 
+                    // automatically redraw the list so they see the new data instantly!
+                    if (document.getElementById("recentModal").style.display === "flex") {
+                        renderRecentList();
+                    }
+                } catch (error) {
+                    console.error("Error fetching data from Google Sheets:", error);
+                } finally {
+                    fetchPromise = null; // Reset when done
+                }
+            })();
+            
+            return fetchPromise;
         }
 
         // Helper function for ultra-fast DOM updates
@@ -617,9 +627,7 @@
             
             let machineExistsInDB = false;
 
-            // Single fast loop through the database to prevent UI stuttering
             liveSheetData.forEach(item => {
-                // Ensure data is treated as strings to prevent crashes
                 const dbMachineRaw = String(item.machine || "").trim();
                 const dbMachineLower = dbMachineRaw.toLowerCase();
                 const dbModel = String(item.model || "").trim();
@@ -629,7 +637,6 @@
                     availableMachines.add(dbMachineRaw);
                 }
 
-                // If user typed a machine name, filter models and serials for it
                 if (machineInput !== "") {
                     if (dbMachineLower === machineInput) {
                         machineExistsInDB = true;
@@ -646,7 +653,6 @@
                         }
                     }
                 } else {
-                    // Show all models globally if no machine is selected yet
                     if (dbModel) {
                         let cleanModel = dbModel.startsWith("FEBTECH-") ? dbModel.replace("FEBTECH-", "") : dbModel;
                         availableModels.add(cleanModel);
@@ -654,23 +660,19 @@
                 }
             });
 
-            // 1. Instantly Update Datalists via DocumentFragment
             updateDatalistDOM("machines", availableMachines);
             updateDatalistDOM("models", availableModels);
             updateDatalistDOM("prefixes", availablePrefixes);
             updateDatalistDOM("serials", availableSerials);
 
-            // 2. Handle Auto-filling Initials
             const prefixInput = document.getElementById("serial-prefix");
             
             if (machineExistsInDB) {
                 if (availablePrefixes.size === 1) {
-                    // Exactly ONE initial exists for this machine: Auto-fill it
                     if (!availablePrefixes.has(prefixInput.value.toUpperCase())) {
                         prefixInput.value = Array.from(availablePrefixes)[0];
                     }
                 } else if (availablePrefixes.size > 1) {
-                    // MULTIPLE initials exist: Leave box empty so the dropdown opens successfully
                     if (!availablePrefixes.has(prefixInput.value.toUpperCase())) {
                         prefixInput.value = "";
                         prefixInput.placeholder = "Select Initial...";
@@ -682,13 +684,11 @@
             }
         }
 
-        // Attach event listeners for rapid updates
         const machineElement = document.getElementById("machine");
         machineElement.addEventListener("input", updateSuggestions);
         machineElement.addEventListener("change", updateSuggestions);
         machineElement.addEventListener("blur", updateSuggestions);
 
-        // Auto-uppercase for manual initial typing
         document.getElementById("serial-prefix").addEventListener("input", function() {
             const start = this.selectionStart;
             const end = this.selectionEnd;
@@ -697,7 +697,7 @@
         });
 
         // =========================
-        // Centralized Recent QR Logic (Now Instant)
+        // Centralized Recent QR Logic
         // =========================
         function renderRecentList() {
             const recentList = document.getElementById("recentList");
@@ -732,17 +732,15 @@
         function openRecentModal() {
             document.getElementById("recentModal").style.display = "flex";
             
-            // 1. Show instantly what we already have downloaded
-            if (cloudRecentQRs.length === 0 && isFetching) {
+            // Render what we have instantly.
+            if (cloudRecentQRs.length === 0 && fetchPromise) {
                 document.getElementById("recentList").innerHTML = `<div class="recent-empty">Syncing with cloud...</div>`;
             } else {
                 renderRecentList();
             }
 
-            // 2. Fetch fresh data in the background silently
-            fetchGoogleSheetData().then(() => {
-                renderRecentList(); 
-            });
+            // Always call fetch to get the newest data (it handles duplicates automatically now)
+            fetchGoogleSheetData(); 
         }
 
         function closeRecentModal() {
