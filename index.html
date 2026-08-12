@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <!-- Completely disable pinch and double-tap zooming on mobile -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>FEBTECH QR Code Generator</title>
     
@@ -12,123 +13,411 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-            background: #f2f2f7; display: flex; justify-content: center;
-            align-items: center; min-height: 100vh; padding: 20px;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
 
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background: #f2f2f7;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        /* Top Buttons Shared Styles */
         .top-btn {
-            color: white; border: none; border-radius: 20px; padding: 8px 16px;
-            font-size: 14px; font-weight: 600; cursor: pointer;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.15); z-index: 100; transition: 0.2s;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            z-index: 100;
+            transition: 0.2s;
         }
         .top-btn:hover { filter: brightness(1.1); }
         .top-btn:active { transform: scale(0.95); }
 
-        .top-left-controls { position: fixed; top: 20px; left: 20px; display: flex; gap: 10px; z-index: 100; }
+        /* Group left buttons to prevent overlap */
+        .top-left-controls {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 100;
+        }
+
         #recentBtn { background: #5856d6; }
         #searchBtn { background: #34c759; }
-        #tokensBtn { position: fixed; top: 20px; right: 20px; background: #ff9500; }
+        
+        #tokensBtn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #ff9500; 
+        }
 
         .container {
-            width: 100%; max-width: 420px; background: #ffffff;
-            border-radius: 18px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,.12);
+            width: 100%;
+            max-width: 420px;
+            background: #ffffff;
+            border-radius: 18px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,.12);
         }
 
+        /* Dark container for Search Modal */
         .dark-container {
-            background: rgba(40, 40, 40, 0.85); backdrop-filter: blur(15px);
-            -webkit-backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.2);
-            color: white; max-width: 480px;
+            background: rgba(40, 40, 40, 0.85);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            max-width: 480px;
         }
-        .dark-container h2 { color: white; margin-bottom: 20px; text-align: center; }
-        .dark-container input { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.3); }
-        .dark-container input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+        .dark-container h2 {
+            color: white;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .dark-container input {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+        .dark-container input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(1);
+            cursor: pointer;
+        }
         .dark-container input::placeholder { color: #ccc; }
 
-        h1 { text-align: center; margin-bottom: 25px; font-size: 28px; color: #111; }
-        label { display: block; margin-top: 18px; margin-bottom: 8px; font-size: 15px; font-weight: 600; color: #333; }
-        
-        input {
-            width: 100%; height: 50px; border: 1px solid #d1d1d6; border-radius: 12px;
-            padding: 0 15px; font-size: 16px; outline: none; background: white; transition: .2s;
+        h1 {
+            text-align: center;
+            margin-bottom: 25px;
+            font-size: 28px;
+            color: #111;
         }
-        input:focus { border-color: #007AFF; box-shadow: 0 0 0 4px rgba(0,122,255,.15); }
+
+        label {
+            display: block;
+            margin-top: 18px;
+            margin-bottom: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        input {
+            width: 100%;
+            height: 50px;
+            border: 1px solid #d1d1d6;
+            border-radius: 12px;
+            padding: 0 15px;
+            font-size: 16px;
+            outline: none;
+            background: white;
+            transition: .2s;
+        }
+
+        input:focus {
+            border-color: #007AFF;
+            box-shadow: 0 0 0 4px rgba(0,122,255,.15);
+        }
+
         input[list] { cursor: text; }
 
+        /* Shared box style for Model and Serial */
         .model-box, .serial-box {
-            display: flex; align-items: center; border: 1px solid #d1d1d6;
-            border-radius: 12px; overflow: hidden; background: white; height: 50px; transition: .2s;
+            display: flex;
+            align-items: center;
+            border: 1px solid #d1d1d6;
+            border-radius: 12px;
+            overflow: hidden;
+            background: white;
+            height: 50px;
+            transition: .2s;
         }
+
         .model-box:focus-within, .serial-box:focus-within {
-            border-color: #007AFF; box-shadow: 0 0 0 4px rgba(0,122,255,.15);
+            border-color: #007AFF;
+            box-shadow: 0 0 0 4px rgba(0,122,255,.15);
         }
-        
+
         .prefix {
-            background: #f5f5f7; color: #555; padding: 0 15px; height: 50px;
-            display: flex; align-items: center; font-weight: bold; border-right: 1px solid #d1d1d6; white-space: nowrap;
+            background: #f5f5f7;
+            color: #555;
+            padding: 0 15px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            font-weight: bold;
+            border-right: 1px solid #d1d1d6;
+            white-space: nowrap;
         }
 
-        .model-box input, .serial-box input { border: none; border-radius: 0; height: 100%; box-shadow: none; }
-        .model-box input:focus, .serial-box input:focus { box-shadow: none; }
-        .model-box input { flex: 1; padding-left: 15px; }
-
-        .serial-box input { text-align: center; padding: 0 5px; }
-        .serial-box .dash { color: #888; font-weight: bold; user-select: none; }
+        .model-box input, .serial-box input {
+            border: none;
+            border-radius: 0;
+            height: 100%;
+            box-shadow: none;
+        }
         
-        #serial-prefix { width: 25%; font-weight: bold; text-transform: uppercase; }
-        #serial-year, #serial-month { background: #f5f5f7; color: #555; font-weight: 500; }
+        .model-box input:focus, .serial-box input:focus {
+            box-shadow: none;
+        }
+
+        .model-box input {
+            flex: 1;
+            padding-left: 15px;
+        }
+
+        /* Specific styles for the multipart Serial Box */
+        .serial-box input {
+            text-align: center;
+            padding: 0 5px;
+        }
+        .serial-box .dash {
+            color: #888;
+            font-weight: bold;
+            user-select: none;
+        }
+        #serial-prefix { 
+            width: 25%; 
+            font-weight: bold; 
+            text-transform: uppercase;
+        }
+        #serial-year, #serial-month {
+            background: #f5f5f7;
+            color: #555;
+            font-weight: 500;
+        }
         #serial-year { width: 22%; }
         #serial-month { width: 15%; }
         #serial-seq { flex: 1; text-align: left; padding-left: 10px; }
 
         button.generate-btn {
-            width: 100%; height: 52px; margin-top: 28px; border: none; border-radius: 12px;
-            background: #007AFF; color: white; font-size: 17px; font-weight: 600; cursor: pointer; transition: .2s;
+            width: 100%;
+            height: 52px;
+            margin-top: 28px;
+            border: none;
+            border-radius: 12px;
+            background: #007AFF;
+            color: white;
+            font-size: 17px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: .2s;
         }
+
         button.generate-btn:hover { background: #0063d1; }
         button.generate-btn:active { transform: scale(.98); }
 
+        /* Full Screen Modal Styling */
         .modal {
-            display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.92);
-            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 1000;
-            align-items: center; justify-content: center; flex-direction: column; padding: 15px;
+            display: none; 
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.92);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            padding: 15px;
         }
-        .close-btn { position: absolute; top: 20px; right: 25px; color: white; font-size: 45px; font-weight: 300; cursor: pointer; line-height: 1; z-index: 1010; }
 
-        #qrcode img, #qrcode canvas { border: 15px solid white; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-width: 90vw; max-height: 90vw; }
-        .qr-hint { color: white; margin-top: 20px; font-size: 18px; font-weight: 600; letter-spacing: 1px; text-align: center; }
-        .qr-details { color: rgba(255, 255, 255, 0.85); margin-top: 15px; font-size: 13px; line-height: 1.5; text-align: center; background: rgba(255, 255, 255, 0.1); padding: 15px 20px; border-radius: 12px; width: 100%; max-width: 350px; }
-        .qr-details strong { color: white; font-weight: 600; }
+        .close-btn {
+            position: absolute;
+            top: 20px;
+            right: 25px;
+            color: white;
+            font-size: 45px;
+            font-weight: 300;
+            cursor: pointer;
+            line-height: 1;
+            z-index: 1010;
+        }
 
-        .recent-modal-header { color: white; font-size: 22px; font-weight: bold; margin-bottom: 4px; text-align: center; }
-        .recent-modal-subtitle { color: #ccc; font-size: 13px; margin-bottom: 15px; text-align: center; }
-        .recent-list { width: 100%; max-width: 450px; max-height: 70vh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 5px; }
+        /* QR Code Modal Specifics */
+        #qrcode img, #qrcode canvas {
+            border: 15px solid white;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            max-width: 90vw;
+            max-height: 90vw;
+        }
         
-        .recent-card { background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 14px; padding: 14px 18px; cursor: pointer; transition: 0.2s; color: white; }
-        .recent-card:hover { background: rgba(255, 255, 255, 0.2); transform: translateY(-2px); }
-        .recent-card:active { transform: scale(0.98); }
-        .recent-card-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; color: #fff; }
-        .recent-card-info { font-size: 13px; color: rgba(255, 255, 255, 0.8); line-height: 1.4; }
-        .recent-card-time { font-size: 11px; color: #ffa500; margin-top: 6px; font-weight: 500; }
-        .recent-empty { color: #ccc; font-size: 15px; text-align: center; margin-top: 40px; }
+        .qr-hint {
+            color: white;
+            margin-top: 20px;
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-align: center;
+        }
 
-        .slider-container { display: flex; align-items: center; justify-content: center; width: 100%; max-height: 75vh; }
-        #tokenImg { width: 100vw; max-height: 75vh; border-radius: 12px; object-fit: contain; transition: opacity 0.3s ease; touch-action: none; }
-        .token-title { color: white; margin-bottom: 20px; font-size: 18px; font-weight: 600; text-align: center; background: rgba(255,255,255,0.15); padding: 8px 16px; border-radius: 20px; }
-        .token-footer { display: flex; align-items: center; justify-content: center; gap: 20px; margin-top: 20px; width: 100%; }
-        .nav-btn { background: rgba(255,255,255,0.25); border: none; color: white; font-size: 20px; width: 50px; height: 50px; border-radius: 25px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.2s; }
+        .qr-details {
+            color: rgba(255, 255, 255, 0.85);
+            margin-top: 15px;
+            font-size: 13px;
+            line-height: 1.5;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px 20px;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 350px;
+        }
+
+        .qr-details strong {
+            color: white;
+            font-weight: 600;
+        }
+
+        /* Recent QR Modal Specifics */
+        .recent-modal-header {
+            color: white;
+            font-size: 22px;
+            font-weight: bold;
+            margin-bottom: 4px;
+            text-align: center;
+        }
+        .recent-modal-subtitle {
+            color: #ccc;
+            font-size: 13px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .recent-list {
+            width: 100%;
+            max-width: 450px;
+            max-height: 70vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding-right: 5px;
+        }
+        .recent-card {
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 14px;
+            padding: 14px 18px;
+            cursor: pointer;
+            transition: 0.2s;
+            color: white;
+        }
+        .recent-card:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+        .recent-card:active { transform: scale(0.98); }
+        .recent-card-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #fff;
+        }
+        .recent-card-info {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.8);
+            line-height: 1.4;
+        }
+        .recent-card-time {
+            font-size: 11px;
+            color: #ffa500;
+            margin-top: 6px;
+            font-weight: 500;
+        }
+        .recent-empty {
+            color: #ccc;
+            font-size: 15px;
+            text-align: center;
+            margin-top: 40px;
+        }
+
+        /* Tokens Slider Specifics */
+        .slider-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            max-height: 75vh;
+        }
+
+        #tokenImg {
+            width: 100vw;
+            max-height: 75vh; 
+            border-radius: 12px;
+            object-fit: contain; 
+            transition: opacity 0.3s ease;
+            touch-action: none;
+        }
+
+        .token-title {
+            color: white;
+            margin-bottom: 20px;
+            font-size: 18px;
+            font-weight: 600;
+            text-align: center;
+            background: rgba(255,255,255,0.15);
+            padding: 8px 16px;
+            border-radius: 20px;
+        }
+
+        .token-footer {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+            width: 100%;
+        }
+
+        .nav-btn {
+            background: rgba(255,255,255,0.25);
+            border: none;
+            color: white;
+            font-size: 20px;
+            width: 50px;
+            height: 50px;
+            border-radius: 25px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
         .nav-btn:active { background: rgba(255,255,255,0.5); }
-        .token-counter { color: #ffffff; font-size: 18px; font-weight: bold; min-width: 60px; text-align: center; }
+        
+        .token-counter {
+            color: #ffffff;
+            font-size: 18px;
+            font-weight: bold;
+            min-width: 60px;
+            text-align: center;
+        }
 
         @media(max-width: 500px) {
             .container { padding: 20px; border-radius: 16px; }
             h1 { font-size: 24px; }
             .close-btn { top: 20px; right: 20px; font-size: 40px; }
+            
+            /* Responsive Top Buttons */
             .top-left-controls { left: 10px; gap: 6px; }
             .top-btn { padding: 6px 10px; font-size: 12px; }
             #tokensBtn { right: 10px; }
+
             #serial-prefix { width: 28%; font-size: 14px;}
             #serial-year { width: 22%; font-size: 14px;}
             #serial-month { width: 16%; font-size: 14px;}
@@ -151,10 +440,12 @@
     <div class="container">
         <h1>FEBTECH QR Code Generator</h1>
 
+        <!-- Machine -->
         <label>Machine Name</label>
         <input list="machines" id="machine" placeholder="Start typing machine name..." autocomplete="off">
         <datalist id="machines"></datalist>
 
+        <!-- Model -->
         <label>Model Number</label>
         <div class="model-box">
             <span class="prefix">FEBTECH-</span>
@@ -162,8 +453,10 @@
             <datalist id="models"></datalist>
         </div>
 
+        <!-- Serial (Multipart Format) & Date -->
         <label>Serial Number</label>
         <div class="serial-box">
+            <!-- Changed to a datalist input so you can choose from multiple initials or type a new one -->
             <input list="prefixes" type="text" id="serial-prefix" placeholder="Initials" autocomplete="off" title="Machine Initials (Editable)">
             <datalist id="prefixes"></datalist>
             
@@ -176,6 +469,7 @@
             <datalist id="serials"></datalist>
         </div>
 
+        <!-- Responsible Person -->
         <label>Responsible Person</label>
         <input list="persons" id="person" placeholder="Select or type a name..." autocomplete="off">
         <datalist id="persons">
@@ -184,10 +478,11 @@
             <option value="Mr. Umesh Kale">
         </datalist>
 
+        <!-- Button -->
         <button class="generate-btn" onclick="generateQR()">Generate QR Code</button>
     </div>
 
-    <!-- Modals -->
+    <!-- QR Code Modal (Full Screen) -->
     <div id="qrModal" class="modal">
         <span class="close-btn" onclick="closeQRModal()">&times;</span>
         <div id="qrcode"></div>
@@ -195,19 +490,25 @@
         <div id="qrDetails" class="qr-details"></div>
     </div>
 
+    <!-- Recent QRs Modal (Full Screen) -->
     <div id="recentModal" class="modal">
         <span class="close-btn" onclick="closeRecentModal()">&times;</span>
         <div class="recent-modal-header">Recent QR Codes</div>
         <div class="recent-modal-subtitle">Synced across all devices • Auto-deletes after 48 hours</div>
+        
         <div id="recentList" class="recent-list"></div>
     </div>
 
+    <!-- Search Machine Modal -->
     <div id="searchModal" class="modal">
         <span class="close-btn" onclick="closeSearchModal()">&times;</span>
         <div class="container dark-container">
             <h2>Search Database</h2>
+            
             <label style="color: #ddd; margin-top: 0;">Search Text</label>
             <input type="text" id="searchInput" placeholder="Machine, Model, Serial, Client..." onkeypress="if(event.key==='Enter') searchMachine()" style="margin-bottom: 10px;">
+            
+            <!-- Collapsible Date Filter to save space -->
             <details style="margin-bottom: 15px; cursor: pointer;">
                 <summary style="color: #34c759; font-weight: bold; outline: none;">+ Add Date Filter</summary>
                 <div style="display: flex; gap: 15px; margin-top: 10px;">
@@ -221,15 +522,22 @@
                     </div>
                 </div>
             </details>
+
             <button class="generate-btn" onclick="searchMachine()" style="background: #34c759; margin-top: 10px;">Search</button>
             <div id="searchResults" style="margin-top: 20px; max-height: 40vh; overflow-y: auto; padding-right: 5px;"></div>
         </div>
     </div>
 
+    <!-- Tokens Gallery Modal (Full Screen) -->
     <div id="tokensModal" class="modal">
         <span class="close-btn" onclick="closeTokensModal()">&times;</span>
+        
         <div class="token-title" id="tokenTitle">Main Title</div>
-        <div class="slider-container"><img id="tokenImg" src="" alt="Token Image"></div>
+        
+        <div class="slider-container">
+            <img id="tokenImg" src="" alt="Token Image">
+        </div>
+        
         <div class="token-footer">
             <button class="nav-btn left" onclick="prevToken()">&#10094;</button>
             <div class="token-counter" id="tokenCounter">1 / 6</div>
@@ -238,6 +546,9 @@
     </div>
 
     <script>
+        // =========================
+        // Default Machine List
+        // =========================
         const DEFAULT_MACHINES = [
             "Febtech's DCM-180", "Febtech's DCM-300", "Automatic Ladling Machine",
             "Servo Sprayer Two Axis", "Linear Servo Sprayer Two Axis", "Auto Spray",
@@ -252,14 +563,18 @@
             "Metal Transfer Ladle", "Universal Precision Grinder"
         ];
 
+        // =========================
+        // Fetch Google Sheets Data
+        // =========================
         const API_URL = "https://script.google.com/macros/s/AKfycbxHsrs7C2PKLUhwO9oILKx4fczyGdzPa3q0mxzIEVRN6zHQrC_eeDMwRuERlWGBROVa_g/exec";
         
-        let liveSheetData = [];
-        let cloudRecentQRs = [];
+        let liveSheetData = [];   // Main Machine Database
+        let cloudRecentQRs = [];  // Centralized Recent QRs
 
         async function fetchGoogleSheetData() {
             try {
                 const urlWithCacheBuster = API_URL + "?t=" + new Date().getTime();
+                
                 const response = await fetch(urlWithCacheBuster, { redirect: "follow" });
                 const data = await response.json();
                 
@@ -273,7 +588,7 @@
         }
 
         // =========================
-        // Handle Auto Suggestions - BULLETPROOFED VERSION
+        // Handle Auto Suggestions & Serial Prefix Logic
         // =========================
         function updateSuggestions() {
             const machineInputRaw = document.getElementById("machine").value;
@@ -282,20 +597,22 @@
             let availableMachines = new Set(DEFAULT_MACHINES);
             let availableModels = new Set();
             let availableSerials = new Set();
-            let availablePrefixes = new Set(); 
+            let availablePrefixes = new Set(); // Stores all unique initials/prefixes for a machine
             
             let machineExistsInDB = false;
 
-            // Use String() on everything coming from DB to prevent numeric crashing bugs
+            // 1. Populate all machines for the master list Safely formatting data to strings
             liveSheetData.forEach(item => {
-                const m = String(item.machine || "").trim();
-                if (m !== "") {
-                    availableMachines.add(m);
+                const dbMachineRaw = String(item.machine || "");
+                if (dbMachineRaw.trim() !== "") {
+                    availableMachines.add(dbMachineRaw.trim());
                 }
             });
 
+            // 2. Filter Models & find Prefixes based on typed Machine Name
             if (machineInput !== "") {
                 liveSheetData.forEach(item => {
+                    // Safe String parsing to prevent crashes from numerical sheet data
                     const dbMachine = String(item.machine || "").trim().toLowerCase();
                     const dbModel = String(item.model || "").trim();
                     const dbSerial = String(item.serial || "").trim();
@@ -303,35 +620,40 @@
                     if (dbMachine === machineInput) {
                         machineExistsInDB = true;
                         
-                        if (dbModel !== "") {
+                        // Populate only models associated with this machine
+                        if (dbModel) {
                             let cleanModel = dbModel.startsWith("FEBTECH-") ? dbModel.replace("FEBTECH-", "") : dbModel;
                             availableModels.add(cleanModel);
                         }
                         
+                        // Extract ALL Serial Prefixes (the part before the first dash)
                         if (dbSerial.includes("-")) {
-                            // Extract prefix and strictly force uppercase to prevent mismatch logic bugs
-                            const prefix = dbSerial.split('-')[0].toUpperCase();
-                            if (prefix) availablePrefixes.add(prefix);
+                            const prefix = dbSerial.split('-')[0];
+                            availablePrefixes.add(prefix);
                         }
                         
+                        // Extract Sequences for autocomplete
                         if (dbSerial.includes("-")) {
                             const parts = dbSerial.split('-');
-                            const seq = parts[parts.length - 1];
-                            if (seq) availableSerials.add(seq); 
+                            availableSerials.add(parts[parts.length - 1]); 
                         }
                     }
                 });
             } else {
+                // If no machine is selected, show all available models just in case
                 liveSheetData.forEach(item => {
                     const dbModel = String(item.model || "").trim();
-                    if (dbModel !== "") {
+                    if (dbModel) {
                         let cleanModel = dbModel.startsWith("FEBTECH-") ? dbModel.replace("FEBTECH-", "") : dbModel;
                         availableModels.add(cleanModel);
                     }
                 });
             }
 
-            // Populate Prefix Datalist
+            // 3. Handle Prefix Box Population and Auto-fill
+            const prefixInput = document.getElementById("serial-prefix");
+            
+            // Populate the datalist with the found prefixes for this machine
             const prefixesDatalist = document.getElementById("prefixes");
             prefixesDatalist.innerHTML = "";
             availablePrefixes.forEach(p => {
@@ -340,21 +662,19 @@
                 prefixesDatalist.appendChild(opt);
             });
 
-            // Safe Auto-fill for Prefix (Prevents infinitely rewriting valid user input)
-            const prefixInput = document.getElementById("serial-prefix");
             if (machineExistsInDB && availablePrefixes.size > 0) {
-                const upperPrefixes = Array.from(availablePrefixes);
-                const currentVal = prefixInput.value.trim().toUpperCase();
-                
-                // Only overwrite if it's completely empty OR doesn't belong to the current machine
-                if (currentVal === "" || !upperPrefixes.includes(currentVal)) {
-                    prefixInput.value = upperPrefixes[0];
+                // If the user hasn't typed a prefix, or they switched machines, 
+                // auto-fill it with the first available prefix for convenience.
+                // Because it is NOT read-only anymore, they can easily click and delete it to type a new one.
+                if (!availablePrefixes.has(prefixInput.value.toUpperCase())) {
+                    prefixInput.value = Array.from(availablePrefixes)[0];
                 }
             } else if (machineInputRaw.trim() === "") {
+                // Clear out if the machine box is entirely empty
                 prefixInput.value = "";
             }
 
-            // Update DOM Datalists
+            // 4. Update Other Datalists in DOM
             const machinesDatalist = document.getElementById("machines");
             machinesDatalist.innerHTML = "";
             availableMachines.forEach(m => {
@@ -380,21 +700,30 @@
             });
         }
 
+        // Run updates heavily to catch selections vs manual typing
         const machineElement = document.getElementById("machine");
         machineElement.addEventListener("input", updateSuggestions);
         machineElement.addEventListener("change", updateSuggestions);
         machineElement.addEventListener("blur", updateSuggestions);
 
+        // Allow manual entry to be uppercase automatically for initials (prevents cursor jump issue)
         document.getElementById("serial-prefix").addEventListener("input", function() {
+            const start = this.selectionStart;
+            const end = this.selectionEnd;
             this.value = this.value.toUpperCase();
+            this.setSelectionRange(start, end);
         });
 
-        // Other Functions Remain Unchanged 
+        // =========================
+        // Centralized Recent QR Logic
+        // =========================
         async function openRecentModal() {
             document.getElementById("recentModal").style.display = "flex";
             const recentList = document.getElementById("recentList");
             recentList.innerHTML = `<div class="recent-empty">Connecting to Cloud Server...<br>Fetching latest team QRs...</div>`;
+            
             await fetchGoogleSheetData(); 
+            
             recentList.innerHTML = "";
             if (cloudRecentQRs.length === 0) {
                 recentList.innerHTML = `<div class="recent-empty">No recent QR codes found in the cloud.<br>Any QR older than 48 hours is automatically excluded.</div>`;
@@ -421,12 +750,18 @@
             }
         }
 
-        function closeRecentModal() { document.getElementById("recentModal").style.display = "none"; }
+        function closeRecentModal() {
+            document.getElementById("recentModal").style.display = "none";
+        }
+
         function previewRecentQR(item) {
             closeRecentModal();
             renderQRModal(item.machine, item.model, item.serial, item.date, item.person, item.qrText);
         }
 
+        // =========================
+        // Search Machine Database
+        // =========================
         function openSearchModal() {
             document.getElementById('searchModal').style.display = 'flex';
             document.getElementById('searchResults').innerHTML = '';
@@ -435,7 +770,10 @@
             document.getElementById('searchToDate').value = '';
             document.getElementById('searchInput').focus();
         }
-        function closeSearchModal() { document.getElementById('searchModal').style.display = 'none'; }
+
+        function closeSearchModal() {
+            document.getElementById('searchModal').style.display = 'none';
+        }
 
         function searchMachine() {
             const query = document.getElementById('searchInput').value.trim().toLowerCase();
@@ -457,25 +795,31 @@
             const results = liveSheetData.filter(item => {
                 let textMatch = true;
                 if (query) {
-                    textMatch = (item.machine && String(item.machine).toLowerCase().includes(query)) ||
-                                (item.model && String(item.model).toLowerCase().includes(query)) ||
-                                (item.serial && String(item.serial).toLowerCase().includes(query)) ||
-                                (item.client && String(item.client).toLowerCase().includes(query));
+                    textMatch = (String(item.machine || "").toLowerCase().includes(query)) ||
+                                (String(item.model || "").toLowerCase().includes(query)) ||
+                                (String(item.serial || "").toLowerCase().includes(query)) ||
+                                (String(item.client || "").toLowerCase().includes(query));
                 }
 
                 let dateMatch = true;
                 if (fromDate || toDate) {
-                    if (!item.dateAdded) { dateMatch = false; } 
-                    else {
-                        let itemDate = new Date(item.dateAdded);
+                    if (!item.dateAdded) {
+                        dateMatch = false; 
+                    } else {
+                        // Safe parsing for dates in case sheets returns strange numerical formats
+                        let dateStr = String(item.dateAdded || "");
+                        let itemDate = new Date(dateStr);
                         if (isNaN(itemDate.getTime())) {
-                            const parts = String(item.dateAdded).split('/');
+                            const parts = dateStr.split('/');
                             if(parts.length === 2) itemDate = new Date(parts[1], parts[0] - 1, 1);
                         }
+
                         if (!isNaN(itemDate.getTime())) {
                             if (fromDate && itemDate < fromDate) dateMatch = false;
                             if (toDate && itemDate > toDate) dateMatch = false;
-                        } else { dateMatch = false; }
+                        } else {
+                            dateMatch = false;
+                        }
                     }
                 }
                 return textMatch && dateMatch;
@@ -500,6 +844,9 @@
             }
         }
 
+        // =========================
+        // Load Saved Persons
+        // =========================
         const personList = document.getElementById("persons");
         let savedPersons = JSON.parse(localStorage.getItem("persons")) || [];
         savedPersons.forEach(name => {
@@ -508,16 +855,29 @@
             personList.appendChild(option);
         });
 
+
+        // Initialize Default Serial Dates on load (editable)
         function initSerialDates() {
             const now = new Date();
             document.getElementById("serial-year").value = now.getFullYear();
             document.getElementById("serial-month").value = String(now.getMonth() + 1).padStart(2, '0');
         }
 
+        // =========================
+        // Generate & Render QR Code
+        // =========================
         function renderQRModal(machine, model, serial, date, person, qrText) {
             const qr = document.getElementById("qrcode");
             qr.innerHTML = "";
-            new QRCode(qr, { text: qrText, width: 280, height: 280, colorDark: "#000000", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.H });
+            new QRCode(qr, {
+                text: qrText,
+                width: 280, 
+                height: 280,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.H
+            });
+
             const qrDetails = document.getElementById("qrDetails");
             qrDetails.innerHTML = `
                 <div><strong>Machine:</strong> ${machine}</div>
@@ -543,12 +903,13 @@
             if (modelInput == "") return alert("Enter Model Number");
             if (!pfx || !yr || !mo || !seq) return alert("Please fill all parts of the Serial Number");
             
+            // Validate Year and Month manually before constructing date
             if (!/^\d{4}$/.test(yr)) return alert("Year must be a 4-digit number (YYYY)");
             if (!/^\d{2}$/.test(mo)) return alert("Month must be a 2-digit number (MM)");
             if (person == "") return alert("Enter Responsible Person");
 
             const serial = `${pfx}-${yr}-${mo}-${seq}`;
-            const date = `${mo}/${yr}`;
+            const date = `${mo}/${yr}`; // Automatically built from Serial Number boxes
 
             const serialExists = liveSheetData.some(item => item.serial === serial);
             if (serialExists) {
@@ -569,18 +930,36 @@
 
             renderQRModal(machine, model, serial, date, person, qrText);
 
-            const payload = { timestamp: Date.now(), machine: machine, model: model, serial: serial, date: date, person: person, qrText: qrText };
+            const payload = {
+                timestamp: Date.now(),
+                machine: machine,
+                model: model,
+                serial: serial,
+                date: date, // Sending generated MM/YYYY date to the cloud
+                person: person,
+                qrText: qrText
+            };
+
             cloudRecentQRs.unshift(payload);
 
             try {
-                await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
+                await fetch(API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "text/plain;charset=utf-8" },
+                    body: JSON.stringify(payload)
+                });
                 console.log("QR Code successfully saved to cloud.");
-            } catch (e) { console.error("Error saving QR Code to cloud.", e); }
+            } catch (e) {
+                console.error("Error saving QR Code to cloud.", e);
+            }
         }
 
         function openQRModal() { document.getElementById('qrModal').style.display = 'flex'; }
         function closeQRModal() { document.getElementById('qrModal').style.display = 'none'; }
 
+        // =========================
+        // Tokens Slider Logic
+        // =========================
         const tokens = [
             { src: "tokens_qr_codes_MACHINE ID RECORD.webp", title: "MACHINE ID RECORD" },
             { src: "tokens_qr_codes_ADDITIONAL VIEW.webp", title: "ADDITIONAL VIEW" },
@@ -595,8 +974,14 @@
         const tokenTitleElement = document.getElementById("tokenTitle");
         const tokenCounterElement = document.getElementById("tokenCounter");
 
-        function openTokensModal() { document.getElementById('tokensModal').style.display = 'flex'; updateTokenView(); }
-        function closeTokensModal() { document.getElementById('tokensModal').style.display = 'none'; }
+        function openTokensModal() {
+            document.getElementById('tokensModal').style.display = 'flex';
+            updateTokenView();
+        }
+
+        function closeTokensModal() {
+            document.getElementById('tokensModal').style.display = 'none';
+        }
 
         function updateTokenView() {
             tokenImgElement.style.opacity = 0;
@@ -608,30 +993,54 @@
             }, 150);
         }
 
-        function nextToken() { currentTokenIndex = (currentTokenIndex + 1) % tokens.length; updateTokenView(); }
-        function prevToken() { currentTokenIndex = (currentTokenIndex - 1 + tokens.length) % tokens.length; updateTokenView(); }
+        function nextToken() {
+            currentTokenIndex = (currentTokenIndex + 1) % tokens.length;
+            updateTokenView();
+        }
 
-        let touchStartX = 0; let touchEndX = 0;
+        function prevToken() {
+            currentTokenIndex = (currentTokenIndex - 1 + tokens.length) % tokens.length;
+            updateTokenView();
+        }
+
+        let touchStartX = 0;
+        let touchEndX = 0;
         tokenImgElement.addEventListener('touchstart', e => { touchStartX = e.changedTouches[0].screenX; });
         tokenImgElement.addEventListener('touchend', e => { touchEndX = e.changedTouches[0].screenX; handleSwipe(); });
+
         function handleSwipe() {
             if (touchEndX < touchStartX - 40) nextToken();
             if (touchEndX > touchStartX + 40) prevToken();
         }
 
+        // =========================
+        // ENTER & ESCAPE KEYS
+        // =========================
         document.addEventListener("keydown", function(e) {
             const searchModal = document.getElementById('searchModal');
             if (e.key === "Enter") {
                 if (searchModal.style.display === 'flex') {
                     searchMachine();
-                } else if (document.getElementById('qrModal').style.display !== 'flex' && document.getElementById('tokensModal').style.display !== 'flex' && document.getElementById('recentModal').style.display !== 'flex') {
+                } else if (document.getElementById('qrModal').style.display !== 'flex' && 
+                    document.getElementById('tokensModal').style.display !== 'flex' &&
+                    document.getElementById('recentModal').style.display !== 'flex') {
                     generateQR();
                 }
             }
-            if (e.key === "Escape") { closeQRModal(); closeTokensModal(); closeRecentModal(); closeSearchModal(); }
+            if (e.key === "Escape") {
+                closeQRModal();
+                closeTokensModal();
+                closeRecentModal();
+                closeSearchModal();
+            }
         });
         
-        window.onload = function() { initSerialDates(); updateSuggestions(); fetchGoogleSheetData(); };
+        // Initialize
+        window.onload = function() {
+            initSerialDates();      
+            updateSuggestions();
+            fetchGoogleSheetData(); 
+        };
     </script>
 </body>
 </html>
