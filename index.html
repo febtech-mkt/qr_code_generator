@@ -72,6 +72,17 @@
             border-radius: 18px;
             padding: 25px;
             box-shadow: 0 10px 30px rgba(0,0,0,.12);
+            position: relative;
+        }
+
+        /* Sync Indicator */
+        #syncIndicator {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-size: 11px;
+            color: #8e8e93;
+            font-weight: 600;
         }
 
         /* Dark container for Search Modal */
@@ -438,6 +449,7 @@
 
     <!-- Main Generator Container -->
     <div class="container">
+        <div id="syncIndicator">Syncing...</div>
         <h1>FEBTECH QR Code Generator</h1>
 
         <!-- Machine -->
@@ -505,8 +517,8 @@
             <h2>Search Database</h2>
             
             <label style="color: #ddd; margin-top: 0;">Search Text</label>
-            <!-- Adjusted for iOS Keyboard Go button -->
-            <input type="text" id="searchInput" placeholder="Machine, Model, Serial, Client..." onkeypress="if(event.key==='Enter') { searchMachine(); this.blur(); }" style="margin-bottom: 10px;">
+            <!-- inputmode="search" forces iPhone to show a 'Search' button -->
+            <input type="text" id="searchInput" inputmode="search" placeholder="Machine, Model, Serial, Client..." onkeyup="if(event.key==='Enter' || event.keyCode===13) { searchMachine(); this.blur(); }" style="margin-bottom: 10px;">
             
             <!-- Collapsible Date Filter to save space -->
             <details style="margin-bottom: 15px; cursor: pointer;">
@@ -564,12 +576,11 @@
         ];
 
         // =========================
-        // Fetch Google Sheets Data
+        // OFFLINE-FIRST CACHE SYSTEM
         // =========================
-        const API_URL = "https://script.google.com/macros/s/AKfycbxHsrs7C2PKLUhwO9oILKx4fczyGdzPa3q0mxzIEVRN6zHQrC_eeDMwRuERlWGBROVa_g/exec";
-        
-        let liveSheetData = [];   
-        let cloudRecentQRs = [];  
+        // Instantly load data from memory (localStorage) if available!
+        let liveSheetData = JSON.parse(localStorage.getItem("febtech_machines_cache")) || [];   
+        let cloudRecentQRs = JSON.parse(localStorage.getItem("febtech_recent_cache")) || [];  
         let fetchPromise = null; 
 
         // iOS Text Sanitizer: 100% crash-proof formatter for iPhone "Smart Punctuation"
@@ -582,29 +593,50 @@
                 .trim();
         }
 
+        const API_URL = "https://script.google.com/macros/s/AKfycbxHsrs7C2PKLUhwO9oILKx4fczyGdzPa3q0mxzIEVRN6zHQrC_eeDMwRuERlWGBROVa_g/exec";
+
         async function fetchGoogleSheetData() {
             if (fetchPromise) return fetchPromise; 
             
+            const syncInd = document.getElementById("syncIndicator");
+            syncInd.innerText = "Syncing...";
+            syncInd.style.color = "#8e8e93";
+
             fetchPromise = (async () => {
                 try {
                     const urlWithCacheBuster = API_URL + "?t=" + new Date().getTime();
-                    // Restored exactly to the reliable fetch method that works on all devices
                     const response = await fetch(urlWithCacheBuster, { redirect: "follow" });
                     const data = await response.json();
                     
                     liveSheetData = data.machines || [];
-                    cloudRecentQRs = (data.recentQRs || []).sort((a, b) => b.timestamp - a.timestamp);
                     
+                    // Filter out truly old items, and sort newest first
+                    cloudRecentQRs = (data.recentQRs || [])
+                        .filter(item => {
+                            const hoursAgo = (Date.now() - item.timestamp) / (1000 * 60 * 60);
+                            return hoursAgo < 48; // Ensure they are strictly under 48 hours old
+                        })
+                        .sort((a, b) => b.timestamp - a.timestamp);
+                    
+                    // Save the new data securely to the local memory cache!
+                    localStorage.setItem("febtech_machines_cache", JSON.stringify(liveSheetData));
+                    localStorage.setItem("febtech_recent_cache", JSON.stringify(cloudRecentQRs));
+
                     updateSuggestions(); 
+                    syncInd.innerText = "Up to date";
+                    syncInd.style.color = "#34c759";
                     
-                    // If modal is open when download finishes, redraw instantly
+                    // If modal is open, redraw instantly
                     if (document.getElementById("recentModal").style.display === "flex") {
                         renderRecentList();
                     }
                 } catch (error) {
-                    console.error("Error fetching data from Google Sheets:", error);
+                    console.error("Error fetching data:", error);
+                    syncInd.innerText = "Offline Mode";
+                    syncInd.style.color = "#ff3b30";
                 } finally {
                     fetchPromise = null; 
+                    setTimeout(() => { syncInd.innerText = ""; }, 3000); // Hide after 3 seconds
                 }
             })();
             
@@ -696,6 +728,7 @@
 
         const machineElement = document.getElementById("machine");
         machineElement.addEventListener("input", updateSuggestions);
+        machineElement.addEventListener("keyup", updateSuggestions);
         machineElement.addEventListener("change", updateSuggestions);
         machineElement.addEventListener("blur", updateSuggestions);
 
@@ -721,8 +754,13 @@
             cloudRecentQRs.forEach(item => {
                 const hoursAgo = Math.floor((Date.now() - item.timestamp) / (1000 * 60 * 60));
                 const minsAgo = Math.floor(((Date.now() - item.timestamp) % (1000 * 60 * 60)) / (1000 * 60));
-                const timeText = hoursAgo > 0 ? `${hoursAgo}h ${minsAgo}m ago` : `${minsAgo}m ago`;
-                const hoursRemaining = Math.max(0, 48 - hoursAgo);
+                
+                // Prevent negative numbers if time is perfectly synced
+                const displayHours = Math.max(0, hoursAgo);
+                const displayMins = Math.max(0, minsAgo);
+                const timeText = displayHours > 0 ? `${displayHours}h ${displayMins}m ago` : `${displayMins}m ago`;
+                
+                const hoursRemaining = Math.max(0, 48 - displayHours);
 
                 const card = document.createElement("div");
                 card.className = "recent-card";
@@ -742,12 +780,10 @@
         function openRecentModal() {
             document.getElementById("recentModal").style.display = "flex";
             
-            if (cloudRecentQRs.length === 0 && fetchPromise) {
-                document.getElementById("recentList").innerHTML = `<div class="recent-empty">Syncing with cloud...</div>`;
-            } else {
-                renderRecentList();
-            }
+            // Instantly render from the Offline Cache!
+            renderRecentList();
 
+            // Quietly fetch updates in background
             fetchGoogleSheetData(); 
         }
 
@@ -787,7 +823,7 @@
                 return;
             }
 
-            // Safari Proof Date Splitting (Bypasses Native Date Parsing Bugs)
+            // Safari Proof Date Splitting
             let fromDate = null;
             if (fromDateVal) {
                 const parts = fromDateVal.split('-');
@@ -819,19 +855,18 @@
                         let dateStr = String(item.dateAdded || "").trim();
                         let itemDate = new Date(dateStr);
                         
-                        // If Safari's native parser fails, manually construct the Date
                         if (isNaN(itemDate.getTime()) && dateStr) {
                             if (dateStr.includes('/')) {
                                 const parts = dateStr.split('/');
                                 if (parts.length === 2) {
-                                    itemDate = new Date(parts[1], parts[0] - 1, 1); // MM/YYYY
+                                    itemDate = new Date(parts[1], parts[0] - 1, 1); 
                                 } else if (parts.length === 3) {
-                                    itemDate = new Date(parts[2], parts[1] - 1, parts[0]); // DD/MM/YYYY
+                                    itemDate = new Date(parts[2], parts[1] - 1, parts[0]); 
                                 }
                             } else if (dateStr.includes('-')) {
                                 const parts = dateStr.split('-');
                                 if (parts.length === 3) {
-                                    itemDate = new Date(parts[0], parts[1] - 1, parts[2]); // YYYY-MM-DD
+                                    itemDate = new Date(parts[0], parts[1] - 1, parts[2]); 
                                 }
                             }
                         }
@@ -960,7 +995,10 @@
                 qrText: qrText
             };
 
+            // Add to UI Array instantly
             cloudRecentQRs.unshift(payload);
+            // Save directly to memory instantly
+            localStorage.setItem("febtech_recent_cache", JSON.stringify(cloudRecentQRs));
 
             try {
                 await fetch(API_URL, {
@@ -1058,7 +1096,11 @@
         // Window Onload ensures reliable boot-up on all browsers
         window.onload = function() {
             initSerialDates();      
+            
+            // Instantly load UI using Local Memory Cache
             updateSuggestions();
+            
+            // Silently check Google for updates in the background
             fetchGoogleSheetData(); 
         };
     </script>
