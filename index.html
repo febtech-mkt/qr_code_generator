@@ -505,7 +505,8 @@
             <h2>Search Database</h2>
             
             <label style="color: #ddd; margin-top: 0;">Search Text</label>
-            <input type="text" id="searchInput" placeholder="Machine, Model, Serial, Client..." onkeypress="if(event.key==='Enter') searchMachine()" style="margin-bottom: 10px;">
+            <!-- Adjusted for iOS Keyboard Go button -->
+            <input type="text" id="searchInput" placeholder="Machine, Model, Serial, Client..." onkeydown="if(event.key==='Enter' || event.keyCode===13 || event.which===13) { searchMachine(); this.blur(); }" style="margin-bottom: 10px;">
             
             <!-- Collapsible Date Filter to save space -->
             <details style="margin-bottom: 15px; cursor: pointer;">
@@ -522,7 +523,7 @@
                 </div>
             </details>
 
-            <button class="generate-btn" onclick="searchMachine()" style="background: #34c759; margin-top: 10px;">Search</button>
+            <button class="generate-btn" onclick="searchMachine(); document.getElementById('searchInput').blur();" style="background: #34c759; margin-top: 10px;">Search</button>
             <div id="searchResults" style="margin-top: 20px; max-height: 40vh; overflow-y: auto; padding-right: 5px;"></div>
         </div>
     </div>
@@ -571,9 +572,13 @@
         let cloudRecentQRs = [];  
         let fetchPromise = null; 
 
-        // iOS Text Sanitizer: Fixes iPhone "Smart Punctuation" (curly quotes)
+        // iOS Text Sanitizer: Fixes iPhone "Smart Punctuation" (curly quotes AND en-dashes/em-dashes)
         function sanitizeIOS(text) {
-            return String(text || "").replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').trim();
+            return String(text || "")
+                .replace(/[\u2018\u2019\u0060\u00B4]/g, "'") // Smart single quotes & backticks
+                .replace(/[\u201C\u201D]/g, '"') // Smart double quotes
+                .replace(/[\u2013\u2014]/g, "-") // En and Em dashes (Crucial for serial number search)
+                .trim();
         }
 
         async function fetchGoogleSheetData() {
@@ -628,7 +633,6 @@
         // =========================
         function updateSuggestions() {
             const machineInputRaw = document.getElementById("machine").value;
-            // Clean iPhone smart quotes from user input
             const machineInput = sanitizeIOS(machineInputRaw).toLowerCase();
 
             let availableMachines = new Set(DEFAULT_MACHINES);
@@ -639,7 +643,6 @@
             let machineExistsInDB = false;
 
             liveSheetData.forEach(item => {
-                // Clean iPhone smart quotes from database data
                 const dbMachineRaw = sanitizeIOS(item.machine);
                 const dbMachineLower = dbMachineRaw.toLowerCase();
                 const dbModel = sanitizeIOS(item.model);
@@ -650,7 +653,6 @@
                 }
 
                 if (machineInput !== "") {
-                    // This comparison now perfectly matches iOS input to PC Database
                     if (dbMachineLower === machineInput) {
                         machineExistsInDB = true;
                         
@@ -698,7 +700,6 @@
         }
 
         const machineElement = document.getElementById("machine");
-        // Added 'keyup' to catch mobile keyboard events more aggressively
         machineElement.addEventListener("input", updateSuggestions);
         machineElement.addEventListener("keyup", updateSuggestions);
         machineElement.addEventListener("change", updateSuggestions);
@@ -792,11 +793,20 @@
                 return;
             }
 
-            const fromDate = fromDateVal ? new Date(fromDateVal) : null;
-            if (fromDate) fromDate.setHours(0, 0, 0, 0);
+            // Safari Proof Date Splitting (Bypasses Native Date Parsing Bugs)
+            let fromDate = null;
+            if (fromDateVal) {
+                const parts = fromDateVal.split('-');
+                fromDate = new Date(parts[0], parts[1] - 1, parts[2]);
+                fromDate.setHours(0, 0, 0, 0);
+            }
 
-            const toDate = toDateVal ? new Date(toDateVal) : null;
-            if (toDate) toDate.setHours(23, 59, 59, 999);
+            let toDate = null;
+            if (toDateVal) {
+                const parts = toDateVal.split('-');
+                toDate = new Date(parts[0], parts[1] - 1, parts[2]);
+                toDate.setHours(23, 59, 59, 999);
+            }
 
             const results = liveSheetData.filter(item => {
                 let textMatch = true;
@@ -812,12 +822,24 @@
                     if (!item.dateAdded) {
                         dateMatch = false; 
                     } else {
-                        let dateStr = String(item.dateAdded || "");
+                        let dateStr = String(item.dateAdded || "").trim();
                         let itemDate = new Date(dateStr);
                         
-                        if (isNaN(itemDate.getTime())) {
-                            const parts = dateStr.split('/');
-                            if(parts.length === 2) itemDate = new Date(parts[1], parts[0] - 1, 1);
+                        // If Safari's native parser fails, manually construct the Date
+                        if (isNaN(itemDate.getTime()) && dateStr) {
+                            if (dateStr.includes('/')) {
+                                const parts = dateStr.split('/');
+                                if (parts.length === 2) {
+                                    itemDate = new Date(parts[1], parts[0] - 1, 1); // MM/YYYY
+                                } else if (parts.length === 3) {
+                                    itemDate = new Date(parts[2], parts[1] - 1, parts[0]); // DD/MM/YYYY
+                                }
+                            } else if (dateStr.includes('-')) {
+                                const parts = dateStr.split('-');
+                                if (parts.length === 3) {
+                                    itemDate = new Date(parts[0], parts[1] - 1, parts[2]); // YYYY-MM-DD
+                                }
+                            }
                         }
 
                         if (!isNaN(itemDate.getTime())) {
@@ -1021,9 +1043,10 @@
         // =========================
         document.addEventListener("keydown", function(e) {
             const searchModal = document.getElementById('searchModal');
-            if (e.key === "Enter") {
+            if (e.key === "Enter" || e.keyCode === 13 || e.which === 13) {
                 if (searchModal.style.display === 'flex') {
                     searchMachine();
+                    document.getElementById('searchInput').blur(); // Force close iOS keyboard
                 } else if (document.getElementById('qrModal').style.display !== 'flex' && 
                     document.getElementById('tokensModal').style.display !== 'flex' &&
                     document.getElementById('recentModal').style.display !== 'flex') {
@@ -1048,7 +1071,7 @@
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initApp);
         } else {
-            initApp(); // Fallback if already loaded
+            initApp(); 
         }
     </script>
 </body>
