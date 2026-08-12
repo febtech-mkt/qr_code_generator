@@ -200,11 +200,6 @@
             color: #333;
             cursor: not-allowed;
         }
-        #serial-year, #serial-month {
-            background: #f5f5f7;
-            color: #555;
-            font-weight: 500;
-        }
         #serial-year { width: 22%; }
         #serial-month { width: 15%; }
         #serial-seq { flex: 1; text-align: left; padding-left: 10px; }
@@ -459,22 +454,18 @@
             <datalist id="models"></datalist>
         </div>
 
-        <!-- Serial (Multipart Format) -->
+        <!-- Serial (Multipart Format) & Date -->
         <label>Serial Number</label>
         <div class="serial-box">
             <input type="text" id="serial-prefix" placeholder="Initials" autocomplete="off" title="Machine Initials">
             <span class="dash">-</span>
-            <input type="text" id="serial-year" placeholder="YYYY" maxlength="4" autocomplete="off" title="Year" readonly>
+            <input type="text" id="serial-year" placeholder="YYYY" maxlength="4" autocomplete="off" title="Year (Editable)">
             <span class="dash">-</span>
-            <input type="text" id="serial-month" placeholder="MM" maxlength="2" autocomplete="off" title="Month" readonly>
+            <input type="text" id="serial-month" placeholder="MM" maxlength="2" autocomplete="off" title="Month (Editable)">
             <span class="dash">-</span>
             <input list="serials" type="text" id="serial-seq" placeholder="Seq #" autocomplete="off" title="Sequence Number">
             <datalist id="serials"></datalist>
         </div>
-
-        <!-- Date -->
-        <label>Date (MM/YYYY)</label>
-        <input type="text" id="date" placeholder="MM/YYYY" maxlength="7" autocomplete="off">
 
         <!-- Responsible Person -->
         <label>Responsible Person</label>
@@ -847,18 +838,8 @@
             personList.appendChild(option);
         });
 
-        // =========================
-        // Auto Date Format MM/YYYY
-        // =========================
-        const dateInput = document.getElementById("date");
-        dateInput.addEventListener("input", function () {
-            let value = this.value.replace(/\D/g, "");
-            if (value.length > 6) value = value.substring(0, 6);
-            if (value.length >= 3) value = value.substring(0, 2) + "/" + value.substring(2);
-            this.value = value;
-        });
 
-        // Initialize Default Serial Dates on load
+        // Initialize Default Serial Dates on load (now editable)
         function initSerialDates() {
             const now = new Date();
             document.getElementById("serial-year").value = now.getFullYear();
@@ -894,7 +875,6 @@
         async function generateQR() {
             const machine = document.getElementById("machine").value.trim();
             const modelInput = document.getElementById("model").value.trim();
-            const date = document.getElementById("date").value.trim();
             const person = document.getElementById("person").value.trim();
 
             const pfx = document.getElementById("serial-prefix").value.trim();
@@ -905,10 +885,14 @@
             if (machine == "") return alert("Select Machine Name");
             if (modelInput == "") return alert("Enter Model Number");
             if (!pfx || !yr || !mo || !seq) return alert("Please fill all parts of the Serial Number");
-            if (!/^\d{2}\/\d{4}$/.test(date)) return alert("Date must be MM/YYYY");
+            
+            // Validate Year and Month manually before constructing date
+            if (!/^\d{4}$/.test(yr)) return alert("Year must be a 4-digit number (YYYY)");
+            if (!/^\d{2}$/.test(mo)) return alert("Month must be a 2-digit number (MM)");
             if (person == "") return alert("Enter Responsible Person");
 
             const serial = `${pfx}-${yr}-${mo}-${seq}`;
+            const date = `${mo}/${yr}`; // Automatically built from Serial Number boxes
 
             const serialExists = liveSheetData.some(item => item.serial === serial);
             if (serialExists) {
@@ -934,7 +918,7 @@
                 machine: machine,
                 model: model,
                 serial: serial,
-                date: date,
+                date: date, // Sending generated MM/YYYY date to the cloud
                 person: person,
                 qrText: qrText
             };
