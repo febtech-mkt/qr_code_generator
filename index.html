@@ -453,10 +453,9 @@
             <datalist id="models"></datalist>
         </div>
 
-        <!-- Serial (Multipart Format) & Date -->
+        <!-- Serial (Multipart Format) -->
         <label>Serial Number</label>
         <div class="serial-box">
-            <!-- Changed to a datalist input so you can choose from multiple initials or type a new one -->
             <input list="prefixes" type="text" id="serial-prefix" placeholder="Initials" autocomplete="off" title="Machine Initials (Editable)">
             <datalist id="prefixes"></datalist>
             
@@ -568,13 +567,15 @@
         // =========================
         const API_URL = "https://script.google.com/macros/s/AKfycbxHsrs7C2PKLUhwO9oILKx4fczyGdzPa3q0mxzIEVRN6zHQrC_eeDMwRuERlWGBROVa_g/exec";
         
-        let liveSheetData = [];   // Main Machine Database
-        let cloudRecentQRs = [];  // Centralized Recent QRs
+        let liveSheetData = [];   
+        let cloudRecentQRs = [];  
+        let isFetching = false; // Prevents overlapping requests
 
         async function fetchGoogleSheetData() {
+            if (isFetching) return; 
+            isFetching = true;
             try {
                 const urlWithCacheBuster = API_URL + "?t=" + new Date().getTime();
-                
                 const response = await fetch(urlWithCacheBuster, { redirect: "follow" });
                 const data = await response.json();
                 
@@ -584,7 +585,22 @@
                 updateSuggestions(); 
             } catch (error) {
                 console.error("Error fetching data from Google Sheets:", error);
+            } finally {
+                isFetching = false;
             }
+        }
+
+        // Helper function for ultra-fast DOM updates
+        function updateDatalistDOM(id, dataSet) {
+            const datalist = document.getElementById(id);
+            datalist.innerHTML = ""; 
+            const fragment = document.createDocumentFragment();
+            dataSet.forEach(val => {
+                let opt = document.createElement("option");
+                opt.value = val;
+                fragment.appendChild(opt);
+            });
+            datalist.appendChild(fragment);
         }
 
         // =========================
@@ -597,116 +613,82 @@
             let availableMachines = new Set(DEFAULT_MACHINES);
             let availableModels = new Set();
             let availableSerials = new Set();
-            let availablePrefixes = new Set(); // Stores all unique initials/prefixes for a machine
+            let availablePrefixes = new Set(); 
             
             let machineExistsInDB = false;
 
-            // 1. Populate all machines for the master list Safely formatting data to strings
+            // Single fast loop through the database to prevent UI stuttering
             liveSheetData.forEach(item => {
-                const dbMachineRaw = String(item.machine || "");
-                if (dbMachineRaw.trim() !== "") {
-                    availableMachines.add(dbMachineRaw.trim());
+                // Ensure data is treated as strings to prevent crashes
+                const dbMachineRaw = String(item.machine || "").trim();
+                const dbMachineLower = dbMachineRaw.toLowerCase();
+                const dbModel = String(item.model || "").trim();
+                const dbSerial = String(item.serial || "").trim();
+
+                if (dbMachineRaw !== "") {
+                    availableMachines.add(dbMachineRaw);
                 }
-            });
 
-            // 2. Filter Models & find Prefixes based on typed Machine Name
-            if (machineInput !== "") {
-                liveSheetData.forEach(item => {
-                    // Safe String parsing to prevent crashes from numerical sheet data
-                    const dbMachine = String(item.machine || "").trim().toLowerCase();
-                    const dbModel = String(item.model || "").trim();
-                    const dbSerial = String(item.serial || "").trim();
-
-                    if (dbMachine === machineInput) {
+                // If user typed a machine name, filter models and serials for it
+                if (machineInput !== "") {
+                    if (dbMachineLower === machineInput) {
                         machineExistsInDB = true;
                         
-                        // Populate only models associated with this machine
                         if (dbModel) {
                             let cleanModel = dbModel.startsWith("FEBTECH-") ? dbModel.replace("FEBTECH-", "") : dbModel;
                             availableModels.add(cleanModel);
                         }
                         
-                        // Extract ALL Serial Prefixes (the part before the first dash)
-                        if (dbSerial.includes("-")) {
-                            const prefix = dbSerial.split('-')[0];
-                            availablePrefixes.add(prefix);
-                        }
-                        
-                        // Extract Sequences for autocomplete
                         if (dbSerial.includes("-")) {
                             const parts = dbSerial.split('-');
+                            availablePrefixes.add(parts[0]);
                             availableSerials.add(parts[parts.length - 1]); 
                         }
                     }
-                });
-            } else {
-                // If no machine is selected, show all available models just in case
-                liveSheetData.forEach(item => {
-                    const dbModel = String(item.model || "").trim();
+                } else {
+                    // Show all models globally if no machine is selected yet
                     if (dbModel) {
                         let cleanModel = dbModel.startsWith("FEBTECH-") ? dbModel.replace("FEBTECH-", "") : dbModel;
                         availableModels.add(cleanModel);
                     }
-                });
-            }
+                }
+            });
 
-            // 3. Handle Prefix Box Population and Auto-fill
+            // 1. Instantly Update Datalists via DocumentFragment
+            updateDatalistDOM("machines", availableMachines);
+            updateDatalistDOM("models", availableModels);
+            updateDatalistDOM("prefixes", availablePrefixes);
+            updateDatalistDOM("serials", availableSerials);
+
+            // 2. Handle Auto-filling Initials
             const prefixInput = document.getElementById("serial-prefix");
             
-            // Populate the datalist with the found prefixes for this machine
-            const prefixesDatalist = document.getElementById("prefixes");
-            prefixesDatalist.innerHTML = "";
-            availablePrefixes.forEach(p => {
-                let opt = document.createElement("option");
-                opt.value = p;
-                prefixesDatalist.appendChild(opt);
-            });
-
-            if (machineExistsInDB && availablePrefixes.size > 0) {
-                // If the user hasn't typed a prefix, or they switched machines, 
-                // auto-fill it with the first available prefix for convenience.
-                // Because it is NOT read-only anymore, they can easily click and delete it to type a new one.
-                if (!availablePrefixes.has(prefixInput.value.toUpperCase())) {
-                    prefixInput.value = Array.from(availablePrefixes)[0];
+            if (machineExistsInDB) {
+                if (availablePrefixes.size === 1) {
+                    // Exactly ONE initial exists for this machine: Auto-fill it
+                    if (!availablePrefixes.has(prefixInput.value.toUpperCase())) {
+                        prefixInput.value = Array.from(availablePrefixes)[0];
+                    }
+                } else if (availablePrefixes.size > 1) {
+                    // MULTIPLE initials exist: Leave box empty so the dropdown opens successfully
+                    if (!availablePrefixes.has(prefixInput.value.toUpperCase())) {
+                        prefixInput.value = "";
+                        prefixInput.placeholder = "Select Initial...";
+                    }
                 }
             } else if (machineInputRaw.trim() === "") {
-                // Clear out if the machine box is entirely empty
                 prefixInput.value = "";
+                prefixInput.placeholder = "Initials";
             }
-
-            // 4. Update Other Datalists in DOM
-            const machinesDatalist = document.getElementById("machines");
-            machinesDatalist.innerHTML = "";
-            availableMachines.forEach(m => {
-                let opt = document.createElement("option");
-                opt.value = m;
-                machinesDatalist.appendChild(opt);
-            });
-
-            const modelsDatalist = document.getElementById("models");
-            modelsDatalist.innerHTML = "";
-            availableModels.forEach(m => {
-                let opt = document.createElement("option");
-                opt.value = m;
-                modelsDatalist.appendChild(opt);
-            });
-
-            const serialsDatalist = document.getElementById("serials");
-            serialsDatalist.innerHTML = "";
-            availableSerials.forEach(s => {
-                let opt = document.createElement("option");
-                opt.value = s;
-                serialsDatalist.appendChild(opt);
-            });
         }
 
-        // Run updates heavily to catch selections vs manual typing
+        // Attach event listeners for rapid updates
         const machineElement = document.getElementById("machine");
         machineElement.addEventListener("input", updateSuggestions);
         machineElement.addEventListener("change", updateSuggestions);
         machineElement.addEventListener("blur", updateSuggestions);
 
-        // Allow manual entry to be uppercase automatically for initials (prevents cursor jump issue)
+        // Auto-uppercase for manual initial typing
         document.getElementById("serial-prefix").addEventListener("input", function() {
             const start = this.selectionStart;
             const end = this.selectionEnd;
@@ -715,39 +697,52 @@
         });
 
         // =========================
-        // Centralized Recent QR Logic
+        // Centralized Recent QR Logic (Now Instant)
         // =========================
-        async function openRecentModal() {
-            document.getElementById("recentModal").style.display = "flex";
+        function renderRecentList() {
             const recentList = document.getElementById("recentList");
-            recentList.innerHTML = `<div class="recent-empty">Connecting to Cloud Server...<br>Fetching latest team QRs...</div>`;
-            
-            await fetchGoogleSheetData(); 
-            
             recentList.innerHTML = "";
+            
             if (cloudRecentQRs.length === 0) {
                 recentList.innerHTML = `<div class="recent-empty">No recent QR codes found in the cloud.<br>Any QR older than 48 hours is automatically excluded.</div>`;
-            } else {
-                cloudRecentQRs.forEach(item => {
-                    const hoursAgo = Math.floor((Date.now() - item.timestamp) / (1000 * 60 * 60));
-                    const minsAgo = Math.floor(((Date.now() - item.timestamp) % (1000 * 60 * 60)) / (1000 * 60));
-                    const timeText = hoursAgo > 0 ? `${hoursAgo}h ${minsAgo}m ago` : `${minsAgo}m ago`;
-                    const hoursRemaining = Math.max(0, 48 - hoursAgo);
-
-                    const card = document.createElement("div");
-                    card.className = "recent-card";
-                    card.innerHTML = `
-                        <div class="recent-card-title">${item.machine}</div>
-                        <div class="recent-card-info">
-                            <strong>Model:</strong> ${item.model} | <strong>Serial:</strong> ${item.serial}<br>
-                            <strong>Date:</strong> ${item.date} | <strong>By:</strong> ${item.person}
-                        </div>
-                        <div class="recent-card-time">Generated ${timeText} • Expires in ${hoursRemaining}h</div>
-                    `;
-                    card.onclick = () => previewRecentQR(item);
-                    recentList.appendChild(card);
-                });
+                return;
             }
+
+            cloudRecentQRs.forEach(item => {
+                const hoursAgo = Math.floor((Date.now() - item.timestamp) / (1000 * 60 * 60));
+                const minsAgo = Math.floor(((Date.now() - item.timestamp) % (1000 * 60 * 60)) / (1000 * 60));
+                const timeText = hoursAgo > 0 ? `${hoursAgo}h ${minsAgo}m ago` : `${minsAgo}m ago`;
+                const hoursRemaining = Math.max(0, 48 - hoursAgo);
+
+                const card = document.createElement("div");
+                card.className = "recent-card";
+                card.innerHTML = `
+                    <div class="recent-card-title">${item.machine}</div>
+                    <div class="recent-card-info">
+                        <strong>Model:</strong> ${item.model} | <strong>Serial:</strong> ${item.serial}<br>
+                        <strong>Date:</strong> ${item.date} | <strong>By:</strong> ${item.person}
+                    </div>
+                    <div class="recent-card-time">Generated ${timeText} • Expires in ${hoursRemaining}h</div>
+                `;
+                card.onclick = () => previewRecentQR(item);
+                recentList.appendChild(card);
+            });
+        }
+
+        function openRecentModal() {
+            document.getElementById("recentModal").style.display = "flex";
+            
+            // 1. Show instantly what we already have downloaded
+            if (cloudRecentQRs.length === 0 && isFetching) {
+                document.getElementById("recentList").innerHTML = `<div class="recent-empty">Syncing with cloud...</div>`;
+            } else {
+                renderRecentList();
+            }
+
+            // 2. Fetch fresh data in the background silently
+            fetchGoogleSheetData().then(() => {
+                renderRecentList(); 
+            });
         }
 
         function closeRecentModal() {
@@ -806,9 +801,9 @@
                     if (!item.dateAdded) {
                         dateMatch = false; 
                     } else {
-                        // Safe parsing for dates in case sheets returns strange numerical formats
                         let dateStr = String(item.dateAdded || "");
                         let itemDate = new Date(dateStr);
+                        
                         if (isNaN(itemDate.getTime())) {
                             const parts = dateStr.split('/');
                             if(parts.length === 2) itemDate = new Date(parts[1], parts[0] - 1, 1);
@@ -854,7 +849,6 @@
             option.value = name;
             personList.appendChild(option);
         });
-
 
         // Initialize Default Serial Dates on load (editable)
         function initSerialDates() {
@@ -909,9 +903,9 @@
             if (person == "") return alert("Enter Responsible Person");
 
             const serial = `${pfx}-${yr}-${mo}-${seq}`;
-            const date = `${mo}/${yr}`; // Automatically built from Serial Number boxes
+            const date = `${mo}/${yr}`; 
 
-            const serialExists = liveSheetData.some(item => item.serial === serial);
+            const serialExists = liveSheetData.some(item => String(item.serial).trim() === serial);
             if (serialExists) {
                 const proceed = confirm("⚠️ This Serial Number is already available in the Database.\n\nDo you still want to continue and generate the QR code to add more images/records?");
                 if (!proceed) return; 
@@ -935,7 +929,7 @@
                 machine: machine,
                 model: model,
                 serial: serial,
-                date: date, // Sending generated MM/YYYY date to the cloud
+                date: date, 
                 person: person,
                 qrText: qrText
             };
@@ -948,7 +942,6 @@
                     headers: { "Content-Type": "text/plain;charset=utf-8" },
                     body: JSON.stringify(payload)
                 });
-                console.log("QR Code successfully saved to cloud.");
             } catch (e) {
                 console.error("Error saving QR Code to cloud.", e);
             }
