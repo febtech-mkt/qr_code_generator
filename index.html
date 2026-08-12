@@ -568,39 +568,53 @@
         const API_URL = "https://script.google.com/macros/s/AKfycbxHsrs7C2PKLUhwO9oILKx4fczyGdzPa3q0mxzIEVRN6zHQrC_eeDMwRuERlWGBROVa_g/exec";
         
         let liveSheetData = [];   
-        let cloudRecentQRs = [];  
-        let fetchPromise = null; // Store the promise so multiple calls share the same fetch
+        let cloudRecentQRs = [];
+        let sheetMachineNames = []; // Added: Array to hold Column A list from backend 
+        let fetchPromise = null; 
+
+        // iOS Text Sanitizer: Fixes iPhone "Smart Punctuation" (curly quotes)
+        function sanitizeIOS(text) {
+            return String(text || "").replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').trim();
+        }
 
         async function fetchGoogleSheetData() {
-            if (fetchPromise) return fetchPromise; // Return the ongoing fetch if already downloading
+            if (fetchPromise) return fetchPromise; 
             
             fetchPromise = (async () => {
                 try {
                     const urlWithCacheBuster = API_URL + "?t=" + new Date().getTime();
-                    const response = await fetch(urlWithCacheBuster, { redirect: "follow" });
+                    const response = await fetch(urlWithCacheBuster, { 
+                        method: 'GET',
+                        redirect: "follow" 
+                    });
+                    
+                    if (!response.ok) throw new Error("Network response was not ok");
+                    
                     const data = await response.json();
                     
                     liveSheetData = data.machines || [];
                     cloudRecentQRs = (data.recentQRs || []).sort((a, b) => b.timestamp - a.timestamp);
                     
+                    // Fetch master machine list from Column A (if provided by API)
+                    sheetMachineNames = data.masterMachines || [];
+                    
                     updateSuggestions(); 
                     
-                    // If the user has the Recent QR modal open when the data finishes downloading, 
-                    // automatically redraw the list so they see the new data instantly!
+                    // If modal is open on iPhone, redraw instantly
                     if (document.getElementById("recentModal").style.display === "flex") {
                         renderRecentList();
                     }
                 } catch (error) {
-                    console.error("Error fetching data from Google Sheets:", error);
+                    console.error("Error fetching data:", error);
+                    // On iOS, silently fail but allow the app to keep working with defaults
                 } finally {
-                    fetchPromise = null; // Reset when done
+                    fetchPromise = null; 
                 }
             })();
             
             return fetchPromise;
         }
 
-        // Helper function for ultra-fast DOM updates
         function updateDatalistDOM(id, dataSet) {
             const datalist = document.getElementById(id);
             datalist.innerHTML = ""; 
@@ -618,26 +632,40 @@
         // =========================
         function updateSuggestions() {
             const machineInputRaw = document.getElementById("machine").value;
-            const machineInput = machineInputRaw.trim().toLowerCase();
+            // Clean iPhone smart quotes from user input
+            const machineInput = sanitizeIOS(machineInputRaw).toLowerCase();
 
+            // Load DEFAULT_MACHINES into the active set initially
             let availableMachines = new Set(DEFAULT_MACHINES);
+            
+            // Add machines synced specifically from Google Sheet Column A
+            sheetMachineNames.forEach(machineName => {
+                const cleanName = sanitizeIOS(machineName);
+                if (cleanName !== "") {
+                    availableMachines.add(cleanName);
+                }
+            });
+
             let availableModels = new Set();
             let availableSerials = new Set();
             let availablePrefixes = new Set(); 
             
             let machineExistsInDB = false;
 
+            // Add generated machines/models from the general sheet database logs
             liveSheetData.forEach(item => {
-                const dbMachineRaw = String(item.machine || "").trim();
+                // Clean iPhone smart quotes from database data
+                const dbMachineRaw = sanitizeIOS(item.machine);
                 const dbMachineLower = dbMachineRaw.toLowerCase();
-                const dbModel = String(item.model || "").trim();
-                const dbSerial = String(item.serial || "").trim();
+                const dbModel = sanitizeIOS(item.model);
+                const dbSerial = sanitizeIOS(item.serial);
 
                 if (dbMachineRaw !== "") {
                     availableMachines.add(dbMachineRaw);
                 }
 
                 if (machineInput !== "") {
+                    // This comparison now perfectly matches iOS input to PC Database
                     if (dbMachineLower === machineInput) {
                         machineExistsInDB = true;
                         
@@ -685,7 +713,9 @@
         }
 
         const machineElement = document.getElementById("machine");
+        // Added 'keyup' to catch mobile keyboard events more aggressively
         machineElement.addEventListener("input", updateSuggestions);
+        machineElement.addEventListener("keyup", updateSuggestions);
         machineElement.addEventListener("change", updateSuggestions);
         machineElement.addEventListener("blur", updateSuggestions);
 
@@ -732,14 +762,12 @@
         function openRecentModal() {
             document.getElementById("recentModal").style.display = "flex";
             
-            // Render what we have instantly.
             if (cloudRecentQRs.length === 0 && fetchPromise) {
                 document.getElementById("recentList").innerHTML = `<div class="recent-empty">Syncing with cloud...</div>`;
             } else {
                 renderRecentList();
             }
 
-            // Always call fetch to get the newest data (it handles duplicates automatically now)
             fetchGoogleSheetData(); 
         }
 
@@ -769,7 +797,7 @@
         }
 
         function searchMachine() {
-            const query = document.getElementById('searchInput').value.trim().toLowerCase();
+            const query = sanitizeIOS(document.getElementById('searchInput').value).toLowerCase();
             const fromDateVal = document.getElementById('searchFromDate').value;
             const toDateVal = document.getElementById('searchToDate').value;
             const resultsDiv = document.getElementById('searchResults');
@@ -788,10 +816,10 @@
             const results = liveSheetData.filter(item => {
                 let textMatch = true;
                 if (query) {
-                    textMatch = (String(item.machine || "").toLowerCase().includes(query)) ||
-                                (String(item.model || "").toLowerCase().includes(query)) ||
-                                (String(item.serial || "").toLowerCase().includes(query)) ||
-                                (String(item.client || "").toLowerCase().includes(query));
+                    textMatch = (sanitizeIOS(item.machine).toLowerCase().includes(query)) ||
+                                (sanitizeIOS(item.model).toLowerCase().includes(query)) ||
+                                (sanitizeIOS(item.serial).toLowerCase().includes(query)) ||
+                                (sanitizeIOS(item.client).toLowerCase().includes(query));
                 }
 
                 let dateMatch = true;
@@ -848,7 +876,7 @@
             personList.appendChild(option);
         });
 
-        // Initialize Default Serial Dates on load (editable)
+        // Initialize Default Serial Dates on load
         function initSerialDates() {
             const now = new Date();
             document.getElementById("serial-year").value = now.getFullYear();
@@ -882,20 +910,19 @@
         }
 
         async function generateQR() {
-            const machine = document.getElementById("machine").value.trim();
-            const modelInput = document.getElementById("model").value.trim();
-            const person = document.getElementById("person").value.trim();
+            const machine = sanitizeIOS(document.getElementById("machine").value);
+            const modelInput = sanitizeIOS(document.getElementById("model").value);
+            const person = sanitizeIOS(document.getElementById("person").value);
 
-            const pfx = document.getElementById("serial-prefix").value.trim();
-            const yr = document.getElementById("serial-year").value.trim();
-            const mo = document.getElementById("serial-month").value.trim();
-            const seq = document.getElementById("serial-seq").value.trim();
+            const pfx = sanitizeIOS(document.getElementById("serial-prefix").value);
+            const yr = sanitizeIOS(document.getElementById("serial-year").value);
+            const mo = sanitizeIOS(document.getElementById("serial-month").value);
+            const seq = sanitizeIOS(document.getElementById("serial-seq").value);
 
             if (machine == "") return alert("Select Machine Name");
             if (modelInput == "") return alert("Enter Model Number");
             if (!pfx || !yr || !mo || !seq) return alert("Please fill all parts of the Serial Number");
             
-            // Validate Year and Month manually before constructing date
             if (!/^\d{4}$/.test(yr)) return alert("Year must be a 4-digit number (YYYY)");
             if (!/^\d{2}$/.test(mo)) return alert("Month must be a 2-digit number (MM)");
             if (person == "") return alert("Enter Responsible Person");
@@ -903,7 +930,7 @@
             const serial = `${pfx}-${yr}-${mo}-${seq}`;
             const date = `${mo}/${yr}`; 
 
-            const serialExists = liveSheetData.some(item => String(item.serial).trim() === serial);
+            const serialExists = liveSheetData.some(item => sanitizeIOS(item.serial) === serial);
             if (serialExists) {
                 const proceed = confirm("⚠️ This Serial Number is already available in the Database.\n\nDo you still want to continue and generate the QR code to add more images/records?");
                 if (!proceed) return; 
@@ -1026,12 +1053,18 @@
             }
         });
         
-        // Initialize
-        window.onload = function() {
+        // Ensure robust initialization on iOS Safari
+        function initApp() {
             initSerialDates();      
             updateSuggestions();
             fetchGoogleSheetData(); 
-        };
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initApp);
+        } else {
+            initApp(); // Fallback if already loaded
+        }
     </script>
 </body>
 </html>
