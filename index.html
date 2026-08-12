@@ -506,7 +506,7 @@
             
             <label style="color: #ddd; margin-top: 0;">Search Text</label>
             <!-- Adjusted for iOS Keyboard Go button -->
-            <input type="text" id="searchInput" placeholder="Machine, Model, Serial, Client..." onkeydown="if(event.key==='Enter' || event.keyCode===13 || event.which===13) { searchMachine(); this.blur(); }" style="margin-bottom: 10px;">
+            <input type="text" id="searchInput" placeholder="Machine, Model, Serial, Client..." onkeypress="if(event.key==='Enter') { searchMachine(); this.blur(); }" style="margin-bottom: 10px;">
             
             <!-- Collapsible Date Filter to save space -->
             <details style="margin-bottom: 15px; cursor: pointer;">
@@ -572,12 +572,13 @@
         let cloudRecentQRs = [];  
         let fetchPromise = null; 
 
-        // iOS Text Sanitizer: Fixes iPhone "Smart Punctuation" (curly quotes AND en-dashes/em-dashes)
+        // iOS Text Sanitizer: 100% crash-proof formatter for iPhone "Smart Punctuation"
         function sanitizeIOS(text) {
-            return String(text || "")
-                .replace(/[\u2018\u2019\u0060\u00B4]/g, "'") // Smart single quotes & backticks
+            if (text === null || text === undefined) return "";
+            return String(text)
+                .replace(/[\u2018\u2019\u0060\u00B4]/g, "'") // Smart single quotes
                 .replace(/[\u201C\u201D]/g, '"') // Smart double quotes
-                .replace(/[\u2013\u2014]/g, "-") // En and Em dashes (Crucial for serial number search)
+                .replace(/[\u2013\u2014]/g, "-") // En and Em dashes
                 .trim();
         }
 
@@ -587,13 +588,8 @@
             fetchPromise = (async () => {
                 try {
                     const urlWithCacheBuster = API_URL + "?t=" + new Date().getTime();
-                    const response = await fetch(urlWithCacheBuster, { 
-                        method: 'GET',
-                        redirect: "follow" 
-                    });
-                    
-                    if (!response.ok) throw new Error("Network response was not ok");
-                    
+                    // Restored exactly to the reliable fetch method that works on all devices
+                    const response = await fetch(urlWithCacheBuster, { redirect: "follow" });
                     const data = await response.json();
                     
                     liveSheetData = data.machines || [];
@@ -601,13 +597,12 @@
                     
                     updateSuggestions(); 
                     
-                    // If modal is open on iPhone, redraw instantly
+                    // If modal is open when download finishes, redraw instantly
                     if (document.getElementById("recentModal").style.display === "flex") {
                         renderRecentList();
                     }
                 } catch (error) {
-                    console.error("Error fetching data:", error);
-                    // On iOS, silently fail but allow the app to keep working with defaults
+                    console.error("Error fetching data from Google Sheets:", error);
                 } finally {
                     fetchPromise = null; 
                 }
@@ -701,7 +696,6 @@
 
         const machineElement = document.getElementById("machine");
         machineElement.addEventListener("input", updateSuggestions);
-        machineElement.addEventListener("keyup", updateSuggestions);
         machineElement.addEventListener("change", updateSuggestions);
         machineElement.addEventListener("blur", updateSuggestions);
 
@@ -1046,7 +1040,7 @@
             if (e.key === "Enter" || e.keyCode === 13 || e.which === 13) {
                 if (searchModal.style.display === 'flex') {
                     searchMachine();
-                    document.getElementById('searchInput').blur(); // Force close iOS keyboard
+                    document.getElementById('searchInput').blur(); 
                 } else if (document.getElementById('qrModal').style.display !== 'flex' && 
                     document.getElementById('tokensModal').style.display !== 'flex' &&
                     document.getElementById('recentModal').style.display !== 'flex') {
@@ -1061,18 +1055,12 @@
             }
         });
         
-        // Ensure robust initialization on iOS Safari
-        function initApp() {
+        // Window Onload ensures reliable boot-up on all browsers
+        window.onload = function() {
             initSerialDates();      
             updateSuggestions();
             fetchGoogleSheetData(); 
-        }
-
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initApp);
-        } else {
-            initApp(); 
-        }
+        };
     </script>
 </body>
 </html>
