@@ -194,11 +194,10 @@
             font-weight: bold; 
             text-transform: uppercase;
         }
-        /* Make locked inputs visually distinct */
-        #serial-prefix[readonly] { 
-            background: #e5e5ea; 
-            color: #333;
-            cursor: not-allowed;
+        #serial-year, #serial-month {
+            background: #f5f5f7;
+            color: #555;
+            font-weight: 500;
         }
         #serial-year { width: 22%; }
         #serial-month { width: 15%; }
@@ -457,7 +456,10 @@
         <!-- Serial (Multipart Format) & Date -->
         <label>Serial Number</label>
         <div class="serial-box">
-            <input type="text" id="serial-prefix" placeholder="Initials" autocomplete="off" title="Machine Initials">
+            <!-- Changed to a datalist input so you can choose from multiple initials or type a new one -->
+            <input list="prefixes" type="text" id="serial-prefix" placeholder="Initials" autocomplete="off" title="Machine Initials (Editable)">
+            <datalist id="prefixes"></datalist>
+            
             <span class="dash">-</span>
             <input type="text" id="serial-year" placeholder="YYYY" maxlength="4" autocomplete="off" title="Year (Editable)">
             <span class="dash">-</span>
@@ -595,8 +597,8 @@
             let availableMachines = new Set(DEFAULT_MACHINES);
             let availableModels = new Set();
             let availableSerials = new Set();
+            let availablePrefixes = new Set(); // Stores all unique initials/prefixes for a machine
             
-            let foundPrefix = "";
             let machineExistsInDB = false;
 
             // 1. Populate all machines for the master list
@@ -606,7 +608,7 @@
                 }
             });
 
-            // 2. Filter Models & find Prefix based on typed Machine Name
+            // 2. Filter Models & find Prefixes based on typed Machine Name
             if (machineInput !== "") {
                 liveSheetData.forEach(item => {
                     const dbMachineRaw = item.machine || "";
@@ -623,9 +625,10 @@
                             availableModels.add(cleanModel);
                         }
                         
-                        // Extract Serial Prefix (the part before the first dash)
-                        if (!foundPrefix && dbSerial.includes("-")) {
-                            foundPrefix = dbSerial.split('-')[0];
+                        // Extract ALL Serial Prefixes (the part before the first dash)
+                        if (dbSerial.includes("-")) {
+                            const prefix = dbSerial.split('-')[0];
+                            availablePrefixes.add(prefix);
                         }
                         
                         // Extract Sequences for autocomplete
@@ -646,23 +649,31 @@
                 });
             }
 
-            // 3. Handle Prefix Box Readonly/Editable state
+            // 3. Handle Prefix Box Population and Auto-fill
             const prefixInput = document.getElementById("serial-prefix");
-            if (machineExistsInDB && foundPrefix) {
-                // Machine exists in DB: Auto-fill and Lock
-                prefixInput.value = foundPrefix;
-                prefixInput.readOnly = true;
-            } else if (machineInputRaw.trim() !== "") {
-                // Custom/New machine entered: Unlock so they can type the prefix
-                if (prefixInput.readOnly) prefixInput.value = ""; // Clear if previously locked
-                prefixInput.readOnly = false;
-            } else {
-                // Empty state
+            
+            // Populate the datalist with the found prefixes for this machine
+            const prefixesDatalist = document.getElementById("prefixes");
+            prefixesDatalist.innerHTML = "";
+            availablePrefixes.forEach(p => {
+                let opt = document.createElement("option");
+                opt.value = p;
+                prefixesDatalist.appendChild(opt);
+            });
+
+            if (machineExistsInDB && availablePrefixes.size > 0) {
+                // If the user hasn't typed a prefix, or they switched machines, 
+                // auto-fill it with the first available prefix for convenience.
+                // Because it is NOT read-only anymore, they can easily click and delete it to type a new one.
+                if (!availablePrefixes.has(prefixInput.value.toUpperCase())) {
+                    prefixInput.value = Array.from(availablePrefixes)[0];
+                }
+            } else if (machineInputRaw.trim() === "") {
+                // Clear out if the machine box is entirely empty
                 prefixInput.value = "";
-                prefixInput.readOnly = false;
             }
 
-            // 4. Update Datalists in DOM
+            // 4. Update Other Datalists in DOM
             const machinesDatalist = document.getElementById("machines");
             machinesDatalist.innerHTML = "";
             availableMachines.forEach(m => {
@@ -694,7 +705,7 @@
         machineElement.addEventListener("change", updateSuggestions);
         machineElement.addEventListener("blur", updateSuggestions);
 
-        // Allow manual entry to be uppercase automatically
+        // Allow manual entry to be uppercase automatically for initials
         document.getElementById("serial-prefix").addEventListener("input", function() {
             this.value = this.value.toUpperCase();
         });
@@ -839,7 +850,7 @@
         });
 
 
-        // Initialize Default Serial Dates on load (now editable)
+        // Initialize Default Serial Dates on load (editable)
         function initSerialDates() {
             const now = new Date();
             document.getElementById("serial-year").value = now.getFullYear();
