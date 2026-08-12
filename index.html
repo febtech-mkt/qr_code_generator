@@ -134,13 +134,21 @@
 
         input[list] { cursor: text; }
 
-        .model-box {
+        /* Shared box style for Model and Serial */
+        .model-box, .serial-box {
             display: flex;
             align-items: center;
             border: 1px solid #d1d1d6;
             border-radius: 12px;
             overflow: hidden;
             background: white;
+            height: 50px;
+            transition: .2s;
+        }
+
+        .model-box:focus-within, .serial-box:focus-within {
+            border-color: #007AFF;
+            box-shadow: 0 0 0 4px rgba(0,122,255,.15);
         }
 
         .prefix {
@@ -155,14 +163,42 @@
             white-space: nowrap;
         }
 
-        .model-box input {
+        .model-box input, .serial-box input {
             border: none;
             border-radius: 0;
-            flex: 1;
-            height: 50px;
-            padding-left: 15px;
+            height: 100%;
             box-shadow: none;
         }
+        
+        .model-box input:focus, .serial-box input:focus {
+            box-shadow: none;
+        }
+
+        .model-box input {
+            flex: 1;
+            padding-left: 15px;
+        }
+
+        /* Specific styles for the multipart Serial Box */
+        .serial-box input {
+            text-align: center;
+            padding: 0 5px;
+        }
+        .serial-box .dash {
+            color: #888;
+            font-weight: bold;
+            user-select: none;
+        }
+        #serial-prefix { 
+            width: 25%; 
+            font-weight: bold; 
+            background: #f5f5f7; 
+            text-transform: uppercase;
+        }
+        #serial-prefix:not([readonly]) { background: white; }
+        #serial-year { width: 22%; }
+        #serial-month { width: 15%; }
+        #serial-seq { flex: 1; text-align: left; padding-left: 10px; }
 
         button.generate-btn {
             width: 100%;
@@ -378,6 +414,11 @@
             .top-left-controls { left: 10px; gap: 6px; }
             .top-btn { padding: 6px 10px; font-size: 12px; }
             #tokensBtn { right: 10px; }
+
+            #serial-prefix { width: 28%; font-size: 14px;}
+            #serial-year { width: 22%; font-size: 14px;}
+            #serial-month { width: 16%; font-size: 14px;}
+            #serial-seq { font-size: 14px; }
         }
     </style>
 </head>
@@ -409,10 +450,18 @@
             <datalist id="models"></datalist>
         </div>
 
-        <!-- Serial -->
+        <!-- Serial (Multipart Format) -->
         <label>Serial Number</label>
-        <input list="serials" type="text" id="serial" placeholder="Enter Serial Number" autocomplete="off">
-        <datalist id="serials"></datalist>
+        <div class="serial-box">
+            <input type="text" id="serial-prefix" placeholder="DU" autocomplete="off" title="Machine Initials" readonly>
+            <span class="dash">-</span>
+            <input type="text" id="serial-year" placeholder="YYYY" maxlength="4" autocomplete="off" title="Year">
+            <span class="dash">-</span>
+            <input type="text" id="serial-month" placeholder="MM" maxlength="2" autocomplete="off" title="Month">
+            <span class="dash">-</span>
+            <input list="serials" type="text" id="serial-seq" placeholder="Seq #" autocomplete="off" title="Sequence Number">
+            <datalist id="serials"></datalist>
+        </div>
 
         <!-- Date -->
         <label>Date (MM/YYYY)</label>
@@ -540,7 +589,7 @@
         }
 
         // =========================
-        // Handle Auto Suggestions
+        // Handle Auto Suggestions & Serial Prefix Logic
         // =========================
         function updateSuggestions() {
             const machineInput = document.getElementById("machine").value.trim();
@@ -549,6 +598,9 @@
             let availableMachines = new Set(DEFAULT_MACHINES);
             let availableModels = new Set();
             let availableSerials = new Set();
+            
+            let foundPrefix = "";
+            let machineExistsInDB = false;
 
             // 1. Process Google Sheets Data
             liveSheetData.forEach(item => {
@@ -559,11 +611,43 @@
                 availableMachines.add(dbMachine);
 
                 if (dbMachine === machineInput) {
+                    machineExistsInDB = true;
+                    
+                    // Extract Model
                     let cleanModel = dbModel.startsWith("FEBTECH-") ? dbModel.replace("FEBTECH-", "") : dbModel;
                     availableModels.add(cleanModel);
-                    availableSerials.add(dbSerial); // Unlocked from model condition
+                    
+                    // Extract Serial Prefix (First occurrence wins)
+                    const serialParts = dbSerial.split('-');
+                    if (!foundPrefix && serialParts.length > 0) {
+                        foundPrefix = serialParts[0];
+                    }
+                    
+                    // Extract Sequence for datalist (Last part of the serial)
+                    if (serialParts.length > 0) {
+                        availableSerials.add(serialParts[serialParts.length - 1]); 
+                    }
                 }
             });
+
+            // 2. Handle Prefix Box Readonly/Editable state
+            const prefixInput = document.getElementById("serial-prefix");
+            if (machineExistsInDB && foundPrefix) {
+                // Known machine with existing prefix
+                prefixInput.value = foundPrefix;
+                prefixInput.readOnly = true;
+                prefixInput.placeholder = "Prefix";
+            } else if (machineInput !== "") {
+                // Custom/New machine entered
+                prefixInput.value = "";
+                prefixInput.readOnly = false;
+                prefixInput.placeholder = "Initials (e.g. DU)";
+            } else {
+                // Empty state
+                prefixInput.value = "";
+                prefixInput.readOnly = true;
+                prefixInput.placeholder = "Prefix";
+            }
 
             // 3. Populate Datalists
             const machinesDatalist = document.getElementById("machines");
@@ -593,6 +677,11 @@
 
         document.getElementById("machine").addEventListener("input", updateSuggestions);
         document.getElementById("machine").addEventListener("change", updateSuggestions);
+
+        // Allow manual entry to be uppercase automatically
+        document.getElementById("serial-prefix").addEventListener("input", function() {
+            this.value = this.value.toUpperCase();
+        });
 
         // =========================
         // Centralized Recent QR Logic
@@ -746,6 +835,13 @@
             this.value = value;
         });
 
+        // Initialize Default Serial Dates on load
+        function initSerialDates() {
+            const now = new Date();
+            document.getElementById("serial-year").value = now.getFullYear();
+            document.getElementById("serial-month").value = String(now.getMonth() + 1).padStart(2, '0');
+        }
+
         // =========================
         // Generate & Render QR Code
         // =========================
@@ -775,15 +871,22 @@
         async function generateQR() {
             const machine = document.getElementById("machine").value.trim();
             const modelInput = document.getElementById("model").value.trim();
-            const serial = document.getElementById("serial").value.trim();
             const date = document.getElementById("date").value.trim();
             const person = document.getElementById("person").value.trim();
 
+            // Construct Full Serial from Parts
+            const pfx = document.getElementById("serial-prefix").value.trim();
+            const yr = document.getElementById("serial-year").value.trim();
+            const mo = document.getElementById("serial-month").value.trim();
+            const seq = document.getElementById("serial-seq").value.trim();
+
             if (machine == "") return alert("Select Machine Name");
             if (modelInput == "") return alert("Enter Model Number");
-            if (serial == "") return alert("Enter Serial Number");
+            if (!pfx || !yr || !mo || !seq) return alert("Please fill all parts of the Serial Number");
             if (!/^\d{2}\/\d{4}$/.test(date)) return alert("Date must be MM/YYYY");
             if (person == "") return alert("Enter Responsible Person");
+
+            const serial = `${pfx}-${yr}-${mo}-${seq}`;
 
             // Duplicate Check Warning
             const serialExists = liveSheetData.some(item => item.serial === serial);
@@ -916,6 +1019,7 @@
         
         // Initialize
         window.onload = function() {
+            initSerialDates();      // Set Year and Month boxes automatically
             updateSuggestions();
             fetchGoogleSheetData(); // Initial background fetch to populate data
         };
