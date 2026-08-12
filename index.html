@@ -72,17 +72,6 @@
             border-radius: 18px;
             padding: 25px;
             box-shadow: 0 10px 30px rgba(0,0,0,.12);
-            position: relative;
-        }
-
-        /* Sync Indicator */
-        #syncIndicator {
-            position: absolute;
-            top: 10px;
-            right: 15px;
-            font-size: 11px;
-            color: #8e8e93;
-            font-weight: 600;
         }
 
         /* Dark container for Search Modal */
@@ -449,7 +438,6 @@
 
     <!-- Main Generator Container -->
     <div class="container">
-        <div id="syncIndicator">Syncing...</div>
         <h1>FEBTECH QR Code Generator</h1>
 
         <!-- Machine -->
@@ -517,8 +505,7 @@
             <h2>Search Database</h2>
             
             <label style="color: #ddd; margin-top: 0;">Search Text</label>
-            <!-- inputmode="search" forces iPhone to show a 'Search' button -->
-            <input type="text" id="searchInput" inputmode="search" placeholder="Machine, Model, Serial, Client..." onkeyup="if(event.key==='Enter' || event.keyCode===13) { searchMachine(); this.blur(); }" style="margin-bottom: 10px;">
+            <input type="text" id="searchInput" placeholder="Machine, Model, Serial, Client..." onkeypress="if(event.key==='Enter') searchMachine()" style="margin-bottom: 10px;">
             
             <!-- Collapsible Date Filter to save space -->
             <details style="margin-bottom: 15px; cursor: pointer;">
@@ -535,7 +522,7 @@
                 </div>
             </details>
 
-            <button class="generate-btn" onclick="searchMachine(); document.getElementById('searchInput').blur();" style="background: #34c759; margin-top: 10px;">Search</button>
+            <button class="generate-btn" onclick="searchMachine()" style="background: #34c759; margin-top: 10px;">Search</button>
             <div id="searchResults" style="margin-top: 20px; max-height: 40vh; overflow-y: auto; padding-right: 5px;"></div>
         </div>
     </div>
@@ -576,32 +563,17 @@
         ];
 
         // =========================
-        // OFFLINE-FIRST CACHE SYSTEM
+        // Fetch Google Sheets Data
         // =========================
-        // Instantly load data from memory (localStorage) if available!
-        let liveSheetData = JSON.parse(localStorage.getItem("febtech_machines_cache")) || [];   
-        let cloudRecentQRs = JSON.parse(localStorage.getItem("febtech_recent_cache")) || [];  
-        let fetchPromise = null; 
-
-        // iOS Text Sanitizer: 100% crash-proof formatter for iPhone "Smart Punctuation"
-        function sanitizeIOS(text) {
-            if (text === null || text === undefined) return "";
-            return String(text)
-                .replace(/[\u2018\u2019\u0060\u00B4]/g, "'") // Smart single quotes
-                .replace(/[\u201C\u201D]/g, '"') // Smart double quotes
-                .replace(/[\u2013\u2014]/g, "-") // En and Em dashes
-                .trim();
-        }
-
         const API_URL = "https://script.google.com/macros/s/AKfycbxHsrs7C2PKLUhwO9oILKx4fczyGdzPa3q0mxzIEVRN6zHQrC_eeDMwRuERlWGBROVa_g/exec";
+        
+        let liveSheetData = [];   
+        let cloudRecentQRs = [];  
+        let fetchPromise = null; // Store the promise so multiple calls share the same fetch
 
         async function fetchGoogleSheetData() {
-            if (fetchPromise) return fetchPromise; 
+            if (fetchPromise) return fetchPromise; // Return the ongoing fetch if already downloading
             
-            const syncInd = document.getElementById("syncIndicator");
-            syncInd.innerText = "Syncing...";
-            syncInd.style.color = "#8e8e93";
-
             fetchPromise = (async () => {
                 try {
                     const urlWithCacheBuster = API_URL + "?t=" + new Date().getTime();
@@ -609,40 +581,26 @@
                     const data = await response.json();
                     
                     liveSheetData = data.machines || [];
+                    cloudRecentQRs = (data.recentQRs || []).sort((a, b) => b.timestamp - a.timestamp);
                     
-                    // Filter out truly old items, and sort newest first
-                    cloudRecentQRs = (data.recentQRs || [])
-                        .filter(item => {
-                            const hoursAgo = (Date.now() - item.timestamp) / (1000 * 60 * 60);
-                            return hoursAgo < 48; // Ensure they are strictly under 48 hours old
-                        })
-                        .sort((a, b) => b.timestamp - a.timestamp);
-                    
-                    // Save the new data securely to the local memory cache!
-                    localStorage.setItem("febtech_machines_cache", JSON.stringify(liveSheetData));
-                    localStorage.setItem("febtech_recent_cache", JSON.stringify(cloudRecentQRs));
-
                     updateSuggestions(); 
-                    syncInd.innerText = "Up to date";
-                    syncInd.style.color = "#34c759";
                     
-                    // If modal is open, redraw instantly
+                    // If the user has the Recent QR modal open when the data finishes downloading, 
+                    // automatically redraw the list so they see the new data instantly!
                     if (document.getElementById("recentModal").style.display === "flex") {
                         renderRecentList();
                     }
                 } catch (error) {
-                    console.error("Error fetching data:", error);
-                    syncInd.innerText = "Offline Mode";
-                    syncInd.style.color = "#ff3b30";
+                    console.error("Error fetching data from Google Sheets:", error);
                 } finally {
-                    fetchPromise = null; 
-                    setTimeout(() => { syncInd.innerText = ""; }, 3000); // Hide after 3 seconds
+                    fetchPromise = null; // Reset when done
                 }
             })();
             
             return fetchPromise;
         }
 
+        // Helper function for ultra-fast DOM updates
         function updateDatalistDOM(id, dataSet) {
             const datalist = document.getElementById(id);
             datalist.innerHTML = ""; 
@@ -660,7 +618,7 @@
         // =========================
         function updateSuggestions() {
             const machineInputRaw = document.getElementById("machine").value;
-            const machineInput = sanitizeIOS(machineInputRaw).toLowerCase();
+            const machineInput = machineInputRaw.trim().toLowerCase();
 
             let availableMachines = new Set(DEFAULT_MACHINES);
             let availableModels = new Set();
@@ -670,10 +628,10 @@
             let machineExistsInDB = false;
 
             liveSheetData.forEach(item => {
-                const dbMachineRaw = sanitizeIOS(item.machine);
+                const dbMachineRaw = String(item.machine || "").trim();
                 const dbMachineLower = dbMachineRaw.toLowerCase();
-                const dbModel = sanitizeIOS(item.model);
-                const dbSerial = sanitizeIOS(item.serial);
+                const dbModel = String(item.model || "").trim();
+                const dbSerial = String(item.serial || "").trim();
 
                 if (dbMachineRaw !== "") {
                     availableMachines.add(dbMachineRaw);
@@ -728,7 +686,6 @@
 
         const machineElement = document.getElementById("machine");
         machineElement.addEventListener("input", updateSuggestions);
-        machineElement.addEventListener("keyup", updateSuggestions);
         machineElement.addEventListener("change", updateSuggestions);
         machineElement.addEventListener("blur", updateSuggestions);
 
@@ -754,13 +711,8 @@
             cloudRecentQRs.forEach(item => {
                 const hoursAgo = Math.floor((Date.now() - item.timestamp) / (1000 * 60 * 60));
                 const minsAgo = Math.floor(((Date.now() - item.timestamp) % (1000 * 60 * 60)) / (1000 * 60));
-                
-                // Prevent negative numbers if time is perfectly synced
-                const displayHours = Math.max(0, hoursAgo);
-                const displayMins = Math.max(0, minsAgo);
-                const timeText = displayHours > 0 ? `${displayHours}h ${displayMins}m ago` : `${displayMins}m ago`;
-                
-                const hoursRemaining = Math.max(0, 48 - displayHours);
+                const timeText = hoursAgo > 0 ? `${hoursAgo}h ${minsAgo}m ago` : `${minsAgo}m ago`;
+                const hoursRemaining = Math.max(0, 48 - hoursAgo);
 
                 const card = document.createElement("div");
                 card.className = "recent-card";
@@ -780,10 +732,14 @@
         function openRecentModal() {
             document.getElementById("recentModal").style.display = "flex";
             
-            // Instantly render from the Offline Cache!
-            renderRecentList();
+            // Render what we have instantly.
+            if (cloudRecentQRs.length === 0 && fetchPromise) {
+                document.getElementById("recentList").innerHTML = `<div class="recent-empty">Syncing with cloud...</div>`;
+            } else {
+                renderRecentList();
+            }
 
-            // Quietly fetch updates in background
+            // Always call fetch to get the newest data (it handles duplicates automatically now)
             fetchGoogleSheetData(); 
         }
 
@@ -813,7 +769,7 @@
         }
 
         function searchMachine() {
-            const query = sanitizeIOS(document.getElementById('searchInput').value).toLowerCase();
+            const query = document.getElementById('searchInput').value.trim().toLowerCase();
             const fromDateVal = document.getElementById('searchFromDate').value;
             const toDateVal = document.getElementById('searchToDate').value;
             const resultsDiv = document.getElementById('searchResults');
@@ -823,28 +779,19 @@
                 return;
             }
 
-            // Safari Proof Date Splitting
-            let fromDate = null;
-            if (fromDateVal) {
-                const parts = fromDateVal.split('-');
-                fromDate = new Date(parts[0], parts[1] - 1, parts[2]);
-                fromDate.setHours(0, 0, 0, 0);
-            }
+            const fromDate = fromDateVal ? new Date(fromDateVal) : null;
+            if (fromDate) fromDate.setHours(0, 0, 0, 0);
 
-            let toDate = null;
-            if (toDateVal) {
-                const parts = toDateVal.split('-');
-                toDate = new Date(parts[0], parts[1] - 1, parts[2]);
-                toDate.setHours(23, 59, 59, 999);
-            }
+            const toDate = toDateVal ? new Date(toDateVal) : null;
+            if (toDate) toDate.setHours(23, 59, 59, 999);
 
             const results = liveSheetData.filter(item => {
                 let textMatch = true;
                 if (query) {
-                    textMatch = (sanitizeIOS(item.machine).toLowerCase().includes(query)) ||
-                                (sanitizeIOS(item.model).toLowerCase().includes(query)) ||
-                                (sanitizeIOS(item.serial).toLowerCase().includes(query)) ||
-                                (sanitizeIOS(item.client).toLowerCase().includes(query));
+                    textMatch = (String(item.machine || "").toLowerCase().includes(query)) ||
+                                (String(item.model || "").toLowerCase().includes(query)) ||
+                                (String(item.serial || "").toLowerCase().includes(query)) ||
+                                (String(item.client || "").toLowerCase().includes(query));
                 }
 
                 let dateMatch = true;
@@ -852,23 +799,12 @@
                     if (!item.dateAdded) {
                         dateMatch = false; 
                     } else {
-                        let dateStr = String(item.dateAdded || "").trim();
+                        let dateStr = String(item.dateAdded || "");
                         let itemDate = new Date(dateStr);
                         
-                        if (isNaN(itemDate.getTime()) && dateStr) {
-                            if (dateStr.includes('/')) {
-                                const parts = dateStr.split('/');
-                                if (parts.length === 2) {
-                                    itemDate = new Date(parts[1], parts[0] - 1, 1); 
-                                } else if (parts.length === 3) {
-                                    itemDate = new Date(parts[2], parts[1] - 1, parts[0]); 
-                                }
-                            } else if (dateStr.includes('-')) {
-                                const parts = dateStr.split('-');
-                                if (parts.length === 3) {
-                                    itemDate = new Date(parts[0], parts[1] - 1, parts[2]); 
-                                }
-                            }
+                        if (isNaN(itemDate.getTime())) {
+                            const parts = dateStr.split('/');
+                            if(parts.length === 2) itemDate = new Date(parts[1], parts[0] - 1, 1);
                         }
 
                         if (!isNaN(itemDate.getTime())) {
@@ -912,7 +848,7 @@
             personList.appendChild(option);
         });
 
-        // Initialize Default Serial Dates on load
+        // Initialize Default Serial Dates on load (editable)
         function initSerialDates() {
             const now = new Date();
             document.getElementById("serial-year").value = now.getFullYear();
@@ -946,19 +882,20 @@
         }
 
         async function generateQR() {
-            const machine = sanitizeIOS(document.getElementById("machine").value);
-            const modelInput = sanitizeIOS(document.getElementById("model").value);
-            const person = sanitizeIOS(document.getElementById("person").value);
+            const machine = document.getElementById("machine").value.trim();
+            const modelInput = document.getElementById("model").value.trim();
+            const person = document.getElementById("person").value.trim();
 
-            const pfx = sanitizeIOS(document.getElementById("serial-prefix").value);
-            const yr = sanitizeIOS(document.getElementById("serial-year").value);
-            const mo = sanitizeIOS(document.getElementById("serial-month").value);
-            const seq = sanitizeIOS(document.getElementById("serial-seq").value);
+            const pfx = document.getElementById("serial-prefix").value.trim();
+            const yr = document.getElementById("serial-year").value.trim();
+            const mo = document.getElementById("serial-month").value.trim();
+            const seq = document.getElementById("serial-seq").value.trim();
 
             if (machine == "") return alert("Select Machine Name");
             if (modelInput == "") return alert("Enter Model Number");
             if (!pfx || !yr || !mo || !seq) return alert("Please fill all parts of the Serial Number");
             
+            // Validate Year and Month manually before constructing date
             if (!/^\d{4}$/.test(yr)) return alert("Year must be a 4-digit number (YYYY)");
             if (!/^\d{2}$/.test(mo)) return alert("Month must be a 2-digit number (MM)");
             if (person == "") return alert("Enter Responsible Person");
@@ -966,7 +903,7 @@
             const serial = `${pfx}-${yr}-${mo}-${seq}`;
             const date = `${mo}/${yr}`; 
 
-            const serialExists = liveSheetData.some(item => sanitizeIOS(item.serial) === serial);
+            const serialExists = liveSheetData.some(item => String(item.serial).trim() === serial);
             if (serialExists) {
                 const proceed = confirm("⚠️ This Serial Number is already available in the Database.\n\nDo you still want to continue and generate the QR code to add more images/records?");
                 if (!proceed) return; 
@@ -995,10 +932,7 @@
                 qrText: qrText
             };
 
-            // Add to UI Array instantly
             cloudRecentQRs.unshift(payload);
-            // Save directly to memory instantly
-            localStorage.setItem("febtech_recent_cache", JSON.stringify(cloudRecentQRs));
 
             try {
                 await fetch(API_URL, {
@@ -1075,10 +1009,9 @@
         // =========================
         document.addEventListener("keydown", function(e) {
             const searchModal = document.getElementById('searchModal');
-            if (e.key === "Enter" || e.keyCode === 13 || e.which === 13) {
+            if (e.key === "Enter") {
                 if (searchModal.style.display === 'flex') {
                     searchMachine();
-                    document.getElementById('searchInput').blur(); 
                 } else if (document.getElementById('qrModal').style.display !== 'flex' && 
                     document.getElementById('tokensModal').style.display !== 'flex' &&
                     document.getElementById('recentModal').style.display !== 'flex') {
@@ -1093,14 +1026,10 @@
             }
         });
         
-        // Window Onload ensures reliable boot-up on all browsers
+        // Initialize
         window.onload = function() {
             initSerialDates();      
-            
-            // Instantly load UI using Local Memory Cache
             updateSuggestions();
-            
-            // Silently check Google for updates in the background
             fetchGoogleSheetData(); 
         };
     </script>
