@@ -192,10 +192,19 @@
         #serial-prefix { 
             width: 25%; 
             font-weight: bold; 
-            background: #f5f5f7; 
             text-transform: uppercase;
         }
-        #serial-prefix:not([readonly]) { background: white; }
+        /* Make locked inputs visually distinct */
+        #serial-prefix[readonly] { 
+            background: #e5e5ea; 
+            color: #333;
+            cursor: not-allowed;
+        }
+        #serial-year, #serial-month {
+            background: #f5f5f7;
+            color: #555;
+            font-weight: 500;
+        }
         #serial-year { width: 22%; }
         #serial-month { width: 15%; }
         #serial-seq { flex: 1; text-align: left; padding-left: 10px; }
@@ -453,11 +462,11 @@
         <!-- Serial (Multipart Format) -->
         <label>Serial Number</label>
         <div class="serial-box">
-            <input type="text" id="serial-prefix" placeholder="DU" autocomplete="off" title="Machine Initials" readonly>
+            <input type="text" id="serial-prefix" placeholder="Initials" autocomplete="off" title="Machine Initials">
             <span class="dash">-</span>
-            <input type="text" id="serial-year" placeholder="YYYY" maxlength="4" autocomplete="off" title="Year">
+            <input type="text" id="serial-year" placeholder="YYYY" maxlength="4" autocomplete="off" title="Year" readonly>
             <span class="dash">-</span>
-            <input type="text" id="serial-month" placeholder="MM" maxlength="2" autocomplete="off" title="Month">
+            <input type="text" id="serial-month" placeholder="MM" maxlength="2" autocomplete="off" title="Month" readonly>
             <span class="dash">-</span>
             <input list="serials" type="text" id="serial-seq" placeholder="Seq #" autocomplete="off" title="Sequence Number">
             <datalist id="serials"></datalist>
@@ -571,18 +580,15 @@
 
         async function fetchGoogleSheetData() {
             try {
-                // Add a cache-buster parameter so browsers don't load stale, cached data
                 const urlWithCacheBuster = API_URL + "?t=" + new Date().getTime();
                 
                 const response = await fetch(urlWithCacheBuster, { redirect: "follow" });
                 const data = await response.json();
                 
                 liveSheetData = data.machines || [];
-                
-                // Sort recent QRs newest first
                 cloudRecentQRs = (data.recentQRs || []).sort((a, b) => b.timestamp - a.timestamp);
                 
-                updateSuggestions(); // Re-render dropdowns once data arrives
+                updateSuggestions(); 
             } catch (error) {
                 console.error("Error fetching data from Google Sheets:", error);
             }
@@ -592,8 +598,8 @@
         // Handle Auto Suggestions & Serial Prefix Logic
         // =========================
         function updateSuggestions() {
-            const machineInput = document.getElementById("machine").value.trim();
-            const modelInput = document.getElementById("model").value.trim();
+            const machineInputRaw = document.getElementById("machine").value;
+            const machineInput = machineInputRaw.trim().toLowerCase();
 
             let availableMachines = new Set(DEFAULT_MACHINES);
             let availableModels = new Set();
@@ -602,54 +608,70 @@
             let foundPrefix = "";
             let machineExistsInDB = false;
 
-            // 1. Process Google Sheets Data
+            // 1. Populate all machines for the master list
             liveSheetData.forEach(item => {
-                const dbMachine = item.machine.trim();
-                const dbModel = item.model.trim();
-                const dbSerial = item.serial.trim();
-
-                availableMachines.add(dbMachine);
-
-                if (dbMachine === machineInput) {
-                    machineExistsInDB = true;
-                    
-                    // Extract Model
-                    let cleanModel = dbModel.startsWith("FEBTECH-") ? dbModel.replace("FEBTECH-", "") : dbModel;
-                    availableModels.add(cleanModel);
-                    
-                    // Extract Serial Prefix (First occurrence wins)
-                    const serialParts = dbSerial.split('-');
-                    if (!foundPrefix && serialParts.length > 0) {
-                        foundPrefix = serialParts[0];
-                    }
-                    
-                    // Extract Sequence for datalist (Last part of the serial)
-                    if (serialParts.length > 0) {
-                        availableSerials.add(serialParts[serialParts.length - 1]); 
-                    }
+                if (item.machine && item.machine.trim() !== "") {
+                    availableMachines.add(item.machine.trim());
                 }
             });
 
-            // 2. Handle Prefix Box Readonly/Editable state
+            // 2. Filter Models & find Prefix based on typed Machine Name
+            if (machineInput !== "") {
+                liveSheetData.forEach(item => {
+                    const dbMachineRaw = item.machine || "";
+                    const dbMachine = dbMachineRaw.trim().toLowerCase();
+                    const dbModel = (item.model || "").trim();
+                    const dbSerial = (item.serial || "").trim();
+
+                    if (dbMachine === machineInput) {
+                        machineExistsInDB = true;
+                        
+                        // Populate only models associated with this machine
+                        if (dbModel) {
+                            let cleanModel = dbModel.startsWith("FEBTECH-") ? dbModel.replace("FEBTECH-", "") : dbModel;
+                            availableModels.add(cleanModel);
+                        }
+                        
+                        // Extract Serial Prefix (the part before the first dash)
+                        if (!foundPrefix && dbSerial.includes("-")) {
+                            foundPrefix = dbSerial.split('-')[0];
+                        }
+                        
+                        // Extract Sequences for autocomplete
+                        if (dbSerial.includes("-")) {
+                            const parts = dbSerial.split('-');
+                            availableSerials.add(parts[parts.length - 1]); 
+                        }
+                    }
+                });
+            } else {
+                // If no machine is selected, show all available models just in case
+                liveSheetData.forEach(item => {
+                    const dbModel = (item.model || "").trim();
+                    if (dbModel) {
+                        let cleanModel = dbModel.startsWith("FEBTECH-") ? dbModel.replace("FEBTECH-", "") : dbModel;
+                        availableModels.add(cleanModel);
+                    }
+                });
+            }
+
+            // 3. Handle Prefix Box Readonly/Editable state
             const prefixInput = document.getElementById("serial-prefix");
             if (machineExistsInDB && foundPrefix) {
-                // Known machine with existing prefix
+                // Machine exists in DB: Auto-fill and Lock
                 prefixInput.value = foundPrefix;
                 prefixInput.readOnly = true;
-                prefixInput.placeholder = "Prefix";
-            } else if (machineInput !== "") {
-                // Custom/New machine entered
-                prefixInput.value = "";
+            } else if (machineInputRaw.trim() !== "") {
+                // Custom/New machine entered: Unlock so they can type the prefix
+                if (prefixInput.readOnly) prefixInput.value = ""; // Clear if previously locked
                 prefixInput.readOnly = false;
-                prefixInput.placeholder = "Initials (e.g. DU)";
             } else {
                 // Empty state
                 prefixInput.value = "";
-                prefixInput.readOnly = true;
-                prefixInput.placeholder = "Prefix";
+                prefixInput.readOnly = false;
             }
 
-            // 3. Populate Datalists
+            // 4. Update Datalists in DOM
             const machinesDatalist = document.getElementById("machines");
             machinesDatalist.innerHTML = "";
             availableMachines.forEach(m => {
@@ -675,8 +697,11 @@
             });
         }
 
-        document.getElementById("machine").addEventListener("input", updateSuggestions);
-        document.getElementById("machine").addEventListener("change", updateSuggestions);
+        // Run updates heavily to catch selections vs manual typing
+        const machineElement = document.getElementById("machine");
+        machineElement.addEventListener("input", updateSuggestions);
+        machineElement.addEventListener("change", updateSuggestions);
+        machineElement.addEventListener("blur", updateSuggestions);
 
         // Allow manual entry to be uppercase automatically
         document.getElementById("serial-prefix").addEventListener("input", function() {
@@ -691,7 +716,6 @@
             const recentList = document.getElementById("recentList");
             recentList.innerHTML = `<div class="recent-empty">Connecting to Cloud Server...<br>Fetching latest team QRs...</div>`;
             
-            // Force fetch to get QRs generated by other devices right now
             await fetchGoogleSheetData(); 
             
             recentList.innerHTML = "";
@@ -756,7 +780,6 @@
                 return;
             }
 
-            // Prep Dates
             const fromDate = fromDateVal ? new Date(fromDateVal) : null;
             if (fromDate) fromDate.setHours(0, 0, 0, 0);
 
@@ -874,7 +897,6 @@
             const date = document.getElementById("date").value.trim();
             const person = document.getElementById("person").value.trim();
 
-            // Construct Full Serial from Parts
             const pfx = document.getElementById("serial-prefix").value.trim();
             const yr = document.getElementById("serial-year").value.trim();
             const mo = document.getElementById("serial-month").value.trim();
@@ -888,14 +910,12 @@
 
             const serial = `${pfx}-${yr}-${mo}-${seq}`;
 
-            // Duplicate Check Warning
             const serialExists = liveSheetData.some(item => item.serial === serial);
             if (serialExists) {
                 const proceed = confirm("⚠️ This Serial Number is already available in the Database.\n\nDo you still want to continue and generate the QR code to add more images/records?");
                 if (!proceed) return; 
             }
 
-            // Save New Person locally
             if (!savedPersons.includes(person) && person != "Mr. Amrut Deshmukh" && person != "Mr. Rajaram Mithe" && person != "Mr. Umesh Kale") {
                 savedPersons.push(person);
                 localStorage.setItem("persons", JSON.stringify(savedPersons));
@@ -907,10 +927,8 @@
             const model = "FEBTECH-" + modelInput;
             const qrText = `##########-THIS_NEW_START-##########\n${machine}\n${model}\n${serial}\n${date}\n${person}`;
 
-            // Render immediately for UI Speed
             renderQRModal(machine, model, serial, date, person, qrText);
 
-            // POST to Google Sheet Cloud
             const payload = {
                 timestamp: Date.now(),
                 machine: machine,
@@ -921,7 +939,6 @@
                 qrText: qrText
             };
 
-            // Add optimistically to current cloud array
             cloudRecentQRs.unshift(payload);
 
             try {
@@ -1019,9 +1036,9 @@
         
         // Initialize
         window.onload = function() {
-            initSerialDates();      // Set Year and Month boxes automatically
+            initSerialDates();      
             updateSuggestions();
-            fetchGoogleSheetData(); // Initial background fetch to populate data
+            fetchGoogleSheetData(); 
         };
     </script>
 </body>
